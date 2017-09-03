@@ -6,7 +6,9 @@
 - (2). 排序服务节点的集合，这些节点在**排序服务**的客户端 与 Kafka 集群之间
 
 
+
 ![Fig. 1. An ordering service, consisting of 5 ordering service nodes (OSN-n), and a Kafka cluster. The ordering service client can be connected to multiple OSNs. Note that the OSNs do not communicate with each other directly.](/fabric_kafka_images/fig1.png)
+
 
 
 这些排序节点（ordering service nodes, OSNs）：
