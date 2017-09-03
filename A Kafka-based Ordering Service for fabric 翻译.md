@@ -5,7 +5,9 @@
 - (1). 一个Kafka 的集群以及它自己对应的ZooKeeper ensemble（这是啥？）
 - (2). 排序服务节点的集合，这些节点在**排序服务**的客户端 与 Kafka 集群之间
 
-Fig1
+
+![Fig. 1. An ordering service, consisting of 5 ordering service nodes (OSN-n), and a Kafka cluster. The ordering service client can be connected to multiple OSNs. Note that the OSNs do not communicate with each other directly.](/fabric_kafka_images/fig1.png)
+
 
 这些排序节点（ordering service nodes, OSNs）：
 
@@ -16,11 +18,11 @@ Fig1
 ### 2. Where does Kafka come in?(不知道怎么翻译)
 在 Kafka 中，Messages (records) 被写入**主题分区** (topic partition)。一个 Kafka 集群可以有多个**主题** (topics)，每个**主题**可以有多个**分区** (partitions)，如图2。每个分区是一个有序的，不可变的记录序列，并且被不断附加。
 
-Fig2
+![Fig. 2. A topic that consists of three partitions. Each record in a partition is tagged with an offset number. (Diagram taken from the Kafka website.)](/fabric_kafka_images/fig2.png)
 
 Solution 0. 假设每一条**链**都有一个separate （独立的？分隔的？）**分区**。每当OSNs 完成了 客户端的验证与对 transaction 的过滤，它们都能把输入进来的 属于某个特定**链**的 客户端的 transactions 中继 (relay) 到该链对应的**分区**上。然后，他们可以使用该**分区**，并返回所有OSNs中常见的 transactions 的有序列表。
 
-Fig3
+![Fig. 3. Assume all client transactions here belong to the same chain. OSNs relay incoming client transactions to the same partition in the Kafka cluster. They can then read from that partition and get all the transactions that were posted to the network in an order that will be the same for all OSNs.](/fabric_kafka_images/fig3.png)
 
 结束了吗？接着看
 
@@ -38,7 +40,7 @@ Fig3
 
 **Solution 3.** 因此，基于时间的 block 的切分，需要一个明确的协调信号。让我们假设每一个 OSN 在切出一个新的 block 时都会给**分区**推送一个“到切第 X 块的时间啦！”的消息（其中 X 是一个整数，对应在序列中的下一个 block），并且 OSN 在从一个**分区**读到这个消息之前，它是不会切出新的 block 的。注意，读取到的消息（一下简称为 TTC-X）并不一定是它自己发出的，如果每个 OSN 都在等待自己的 TTC-X，那么会再次出现分歧。于是，每一个 OSN 在收集到了 batchSize 条消息或者接收到第一个 TTC-X 消息后，都会切出一个 新的 block。这意味着，后续所有的具有相同 X 值的 TTC-X都会被忽略。如图4所示。
 
-Fig4
+![FFig. 4. OSNs post incoming transactions and TTC-X messages to the partition.](/fabric_kafka_images/fig4.png)
 
 我们现在已经找到了切出新 block 的方法，不论是基于 transaction 数量还是基于时间我们都能保证在所有 OSN 中，block 序列的一致性。
 
