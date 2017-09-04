@@ -42,7 +42,7 @@ Solution 0. 假设每一条**链**都有一个separate （独立的？分隔的�
 
 **Solution 3.** 因此，基于时间的 block 的切分，需要一个明确的协调信号。让我们假设每一个 OSN 在切出一个新的 block 时都会给**分区**推送一个“到切第 X 块的时间啦！”的消息（其中 X 是一个整数，对应在序列中的下一个 block），并且 OSN 在从一个**分区**读到这个消息之前，它是不会切出新的 block 的。注意，读取到的消息（一下简称为 TTC-X）并不一定是它自己发出的，如果每个 OSN 都在等待自己的 TTC-X，那么会再次出现分歧。于是，每一个 OSN 在收集到了 batchSize 条消息或者接收到第一个 TTC-X 消息后，都会切出一个 新的 block。这意味着，后续所有的具有相同 X 值的 TTC-X都会被忽略。如图4所示。
 
-![FFig. 4. OSNs post incoming transactions and TTC-X messages to the partition.](/fabric_kafka_images/fig4.png)
+![Fig. 4. OSNs post incoming transactions and TTC-X messages to the partition.](/fabric_kafka_images/fig4.png)
 
 我们现在已经找到了切出新 block 的方法，不论是基于 transaction 数量还是基于时间我们都能保证在所有 OSN 中，block 序列的一致性。
 
@@ -64,20 +64,56 @@ Solution 0. 假设每一条**链**都有一个separate （独立的？分隔的�
 这个查询表就使得我们不再需要 block metadata，并且可以让客户端在 Deliver 请求中指明正确的 offset。OSN 将请求的 block 编号转换为正确的 offset 值，并设置了一个 consumer 来查找它。现在，我们通过维护一些表，克服了上面所说的问题。但又出现了两个问题。
 **Problem 5.** 第一，注意，每当 OSN 接收到一个 Deliver 请求，它必须从请求的 block 号开始从该**分区**检索所有的消息，将它们打包成 block 并签名。这一打包与签名过程在每一个 replay 请求中都会重复，并且耗费昂贵。**Problem 6.** 第二，因为我们在分区中有我们需要跳过的冗余的消息，因此回复一个 Deliver 请求并不像设置一个 consumer，寻找请求的 offset，replay所有的记录那样简单；查询表会在任意时刻被查询，交付逻辑开始变得越来越复杂，并且对查询表的检查会增加延迟。我们先不考虑第二个问题，针对第一个问题，为了解决它，我们需要在创建 blocks 时维持它们（peersist these blocks as we create them），当我们 replaying（不知道这个怎么翻译？？？）时，我们只需要传输已维持着的 blocks（transmit the persisted blocks）。
 
-**Solution 5a.** 为了解决这个问题，假设我们要全部进入Kafka（？？？），我们创建另一个**分区** - 让我们称之为分区1，这意味着我们目前为止保持引用的分区是分区0。现在，每当 OSNs 切出一个 block，它们都会将其推送（post)到分区1，并且所有的 Deliver 请求都将由这个分区提供服务（served by that partitioin？？怎么翻译妥当？？）。
+**Solution 5a.** 为了解决这个问题，假设我们要全部进入Kafka（？？？），我们创建另一个**分区** - 让我们称之为分区1，这意味着我们目前为止保持引用的分区是分区0。现在，每当 OSNs 切出一个 block，它们都会将其推送（post)到分区1，并且所有的 Deliver 请求都将由这个分区提供服务（served by that partitioin？？怎么翻译妥当？？）。因为每个 OSN 都把它们切下来的 block 推送到分区1，所以我们能想到分区1中的 block 的顺序并不是**链**中 block 的真正顺序；其中的 block 可能重复，并且由于 block 来自所有的 OSNs，因而 block 的编号不太可能严格递增 —— 如图5所示。
 
+![Fig. 5. A possible state of partition 1. Most recent message gets appended to the right. Notice how the block numbers across all OSNs are not in a strictly increasing order (3-3-1-2-2-4). However, the numbers per OSN form a strictly increasing sequence as expected (eg. 1-2 for OSN4).](/fabric_kafka_images/fig5.png)
 
+这意味着 Kafka 分配的 offset 值并不能对应 OSN 分配的（连续的）block 编号，因此如前面所做的一样，我们在此处也需要维护一个 block-to-offset 的查询表。如表2所示。
 
+|Block Number|Offset Number|
+|:----------:|:-----------:|
+|	...		 |		...	   |
+|3			 |3		   |
+|4			 |8		   |
+|	...		 |	...		   |
 
+以上解决方案能够工作，但注意到，我们之前所说的问题6依旧没有解决；在 OSN 侧的 Deliver 逻辑比较复杂并且 查询表 在每一次请求都需要被查询。
 
+**Solution 6.** 想想会发现，造成这个问题的原因是“冗余的消息被推送到了分区”。无论是分区0的 TTC-X 消息（参见图4中的最后一个消息）还是“Block X”消息 它被发送到分区1并且小于或等于较早的消息（图5中的所有中间消息都小于或等于最左侧的块3）。那我们如何摆脱这些冗余消息呢？
 
+**Solution 6a.** 首先，让我们采取如下的规则：如果你已经从**分区**收到与您要发布的内容相同的消息（减去签名），请中止你自己的推送操作。回到图5中的例子，如果 OSN1 在形成自己的 block 3 之前已经看到了分区1中的 OSN2 的 Block 3消息，则它将跳过其分区1的传输（~~？？翻译不够准确~~）。（我们在这里描述的所有内容都具有分区0和图4示例的等效示例。）虽然这样能够去掉冗余的消息，但并不能够完全消除他们。肯定会有OSNs在同一时间发布相同的块的情况，或者相同的块正在飞往 Kafka 代理集。即使你加了一些其他操作在里面（比如，在每个节点要把 block 推送到链上时，先加一个随机的延时），你依然会面临这样的问题。
 
+**Solution 6b.** 如果我们有一个负责推送 block 到分区1中的 OSN 领导节点，这回怎么样呢？有好几种选出 leader 的方法；例如，你可以使所有 OSN 在 ZooKeeper 中竞争 znode，或者让第一个在分区0中发布 TTC-X 消息的节点成为 leader。另一个有趣的方法是，可以让所有的 OSNs 属于同一个 consumer group，这意味着每个 OSN 在一个 topic 中都获得了自己独立的一个 partition。（假设一个 topic 负载了所有**链**的 partition-0，另一个 topic 负载了所有**链**的 partition-1）于是，负责将 TTC-X 消息发送到 partition-0或者负责把 block 推送到某条**链**的 partition-1的 OSN就是这条链的 partition 0的拥有者 —— 这是由 Kafka 管理的状态，可以通过 Kafka Metadata API 查询。（向一个不用有该**链/分区**的 OSN 发送的 Deliver 请求会被重定向至另外一个合适的 OSN。）
 
+上诉方案可以工作，但是如果 leader 发送 Block X 消息给分区，然后就宕机了。这条信息还在去往分区1的路上，但还没有到达。其他 OSNs 意识到 leader 宕机了，因为 leader 不再持有 ZooKeeper 的 znode，于是一个新的 leader 被选取出来。新选出来的 leader 意识到 Block X 在自己的缓存里但还没有被推送到分区1，于是它把 Block X 推送给分区1。现在，之前在路上的那个 Block X 到达了分区1，那么问题来了，我们又再一次得到了重复的 block。这一系列事件如图6所示。
 
+Fig6
 
+**Solution 6c.** 日志压缩能解决这个问题吗？日志压缩保证了 Kafka 中保存的是一个分区中每个 message key 的最新的已知 value。情景如图7所示。
 
+Fig7
 
+所以，如果我们使用了日志压缩，，我们可以完全地从分区中去除重复的部分，当然，前提是所有的 Block X 消息都携带了相同的 key，而不同的 X 对应的 key 是不同的。但是因为日志压缩存储的是一个 key 的最新版本，OSNs 可能会因为查询了陈旧的（过时的）查询表而出错。再看到图7中的例子，假设列出的所有 key 都对应了 block，有一个仅接收该分区中的前两个消息的OSN具有将 block 1 映射到 offset 0 并且将 block 2 映射到 offset 1的查找表。与此同时，由于分区已经被压缩（如图7下半部分所示），因此查找 offset 0（或 1） 将导致错误。与日志压缩问题同样重要的是，分区1中的 blocks 并不会升序排序（如图7下下班部分所示，blocks 的顺序是 1-3-4-5-2-6），所以 Deliver 逻辑还是比较复杂。实际上，考虑到查询表有过时的风险，所以日志压缩的方法不太可行。
 
+所以这里提供的解决方案都没有解决问题6。我们来看看有没有办法解决这个问题，为此，让我们回到第一个问题5 - persisting blocks so that replays are faster（？？不知道怎么翻译才好？）。
+
+**Solution 5b.** 相比与在 Solution 6a 中使用了另一个 Kafka 分区，在此，我们依旧使用分区0 —— tx 和 TTC-X 消息所推送到的分区，并且每个 OSN 为每个**链**维护一个本地日志。如图8所示。
+
+Fig8
+
+这样做有如下的好处。
+
+第一，它解决了问题6 —— **Solution 6d.**：处理一个 Deliver 请求现在只需要从本地账本里顺序读取。（不会存在重复，因为 OSN 在写本地日志时会过滤它们，也没有查询表。 OSN 会跟踪它读到的最后一个 offset 值，只是为了知道当重新连接时从 Kafka consuming 的地方）
+
+第二，它最大限度地利用了 orderer 代码库中的通用组件的使用 - 所有现有实现中的 Deliver 路径基本上都是相同的
+
+本地账本为 Deliver 请求提供服务的一个缺点就是，会比直接从 Kafka 提供服务慢。 但是实际上我们从来没有从 Kafka 直接提供服务； OSN上总是做了一些处理。
+
+具体来说，如果我们讨论一下 replay 请求，替代方案（solution 4b 与 solution 5a）仍然需要在 OSNs 上进行处理（无论是 solution 4b 中的打包与对查询表的查找，还是在 solution 5a中对查询表的查找），因此在无账本解决方案（ledger-less solutions）中我们已经付出了一定的代价。
+
+If we are talking about Deliver requests to keep current（“tail -f”等效），则解决方案6d与4b相比的额外代价是将 block 存储到账本并从其中提供。 在解决方案5a中，块需要经由分区1进行第二次往返，因此根据环境，这可能甚至比6d差。
+
+总体而言，对传入的客户端 transaction 与 TTC-X 消息使用单个分区（每个**链**）并且将生成的 blocks 存储在本地账本（每个**链**）的排序服务在性能与复杂性之间取得了较好的平衡。
 
 
 
