@@ -1,4 +1,4 @@
-代码结构
+### WriteFile代码结构
 ```
 	peer/
 	|-	chaincode/
@@ -14,7 +14,7 @@
 ---
 ### node
 ---
- node/start.go
+##### node/start.go
 
 - initSysCCs 开启 chaincodes
 	- DeploySysCCs 部署系统 chaincodes
@@ -42,18 +42,18 @@
 	- ehubGrpcServer.Start() 启动 event hub server（这是什么）
 
 ---
-node/node.go
+##### node/node.go
 
 没什么东西
 ---
-node/status.go
+##### node/status.go
 
 - status() 获取服务器状态
 
 ---
 ### channel
 ---
-channel/channel.go
+##### channel/channel.go
 
 一些结构体与变量定义
 一些命令行解析
@@ -67,7 +67,9 @@ channel/channel.go
 	- newDeliverClient() 返回了一个 deliverClient 结构体指针。**cmdFact.DeliverClient 接收**
 
 ---
-channel/create.go
+##### channel/create.go
+
+- **const createCmdDescription = "Create a channel"**
 
 - createChannelFromDefaults 返回了一个 *cb.Envelope（通过函数名猜测是指 “从默认创建通道”吗）
 
@@ -93,7 +95,7 @@ channel/create.go
 	- 调用 executeCreate(cf)
 
 ---
-channel/deliverclient.go
+##### channel/deliverclient.go
 
 - 一些接口与结构体定义
 
@@ -111,7 +113,110 @@ channel/deliverclient.go
 	- getNewestBlock 调用 seekNewest 与 readBlcok
 	- Close 调用 r.conn.Close()
 	
-- getGenesisBlock select 语句，每太看懂这个 select 语言的 case 部分
+- getGenesisBlock select 语句，没太看懂这个 select 语言的 case 部分
+
+---
+##### channnel/fetchconfig.go
+
+- fetchCmd 命令行解析
+
+- fetch
+	- 调用 InitCmdFactory，返回 *ChannelCmdFactory
+	- 判断参数 args[0]（命令行的输入），根据参数取 block
+		- "oldest" 则执行 cf.DeliverClient.getOldestBlock()
+		- "newest"则执行 cf.DeliverClient.getNewestBlock()
+		- "config" 则执行 iBlock = cf.DeliverClient.getNewestBlock()，lc = utils.GetLastConfigIndexFromBlock(iBlock)，block = cf.DeliverClient.getSpecifiedBlock(lc)
+		- 默认则执行 cf.DeliverClient.getSpecifiedBlock(uint64(num))
+
+	- 执行proto.Marshal(block)，压缩 block 
+	- 调用 ioutil.WriteFile 写文件
+	
+---
+##### channel/join.go
+
+- **const commandDescription = "Joins the peer to a chain."**
+
+- joinCmd 命令行解析
+
+- getJoinCCSpec 输入参数为 *pb.ChaincodeSpec，该参数携带了 chaincode 的明确（specification），ChaincodeSpec 结构体中的字段就是定义一个 chaincode 所需的实际元数据
+	- ioutil.ReadFile(genesisBlockPath) 读取创世区块
+	- 执行 spec := &pb.ChaincodeSpec{xxx}，得到对 chaincode 的明确
+	- 返回 spec
+
+- executeJoin
+	- 执行 spec, err := getJoinCCSpec()
+	- 执行 invocation := &pb.ChaincodeInvocationSpec{ChaincodeSpec: spec}，得到 ChaincodeInvocationSpec 结构体的引用，该结构体携带了 chaincode 的函数和参数
+	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal（提案？）
+	- 调用 putils.GetSignedProposal 返回了一个 *pb.SignedProposal 的 signedProp，SignedProposal 有两个字段，一个是 ProposalBytes，另一个是 Signature
+	- 调用 cf.EndorserClient.ProcessProposal 返回了一个 *pb.ProposalResponse 指针，ProposalResponse 结构体是从一个 endorser 返回给 proposal submitter 的
+	
+- join
+	- 一些命令行处理
+	- InitCmdFactory
+	- 执行 executeJoin
+	
+---
+##### channel/list.go
+
+- 定义一个 endorserClient 的结构体
+
+- listCmd 命令行解析
+
+- getChannels，endorserClient 的方法，输入是 ChannelInfo 的结构体，其实就是一个  ChannelId
+	- 执行 invocation := &pb.ChaincodeInvocationSpec（注意一下 ChaincodeId 是 cscc，Input 是 GetChannels
+	- 执行 cc.cf.Signer.Serialize()
+	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal（提案？）
+	- 调用 utils.GetSignedProposal 返回一个 signed proposal
+	- 调用 cc.cf.EndorserClient.ProcessProposal 得到 proposalResp
+	- 调用 proto.Unmarshal，将之前得到的 proposalResp 解压为一个 pb.ChannelQueryResponse 变量 channelQueryResponse
+	- 返回 channelQueryResponse.Channels
+
+- list
+	- 调用 InitCmdFactory
+	- 执行 client := &endorserClient{cf}
+	- 调用 client.getChannels()，在 log 中输出相关信息，如 `"Channels peers has joined to: %s", channel.ChannelId`
+	
+	
+---
+##### channel/signconfigtx.go
+
+- signconfigtxCmd 命令行解析
+
+- sign
+	- 判断 channelTxFile 即 configtx 文件路径是否为空
+	- 调用 InitCmdFactory
+	- 调用 ioutil.ReadFile(channelTxFile) 读取文件
+	- 调用 utils.UnmarshalEnvelope(fileData) 解压上一步读取的数据
+	- 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出
+	- 调用 utils.MarshalOrPanic 输入参数为上一步输出
+	- 调用 ioutil.WriteFile 写文件，输入参数为 channelTxFile 与上一步的输出
+	
+---
+##### channel/update.go
+
+- updateCmd 命令行解析
+
+- update
+	- 判断 chainID 是否为空
+	- 判断 channelTxFile 即 configtx 文件路径是否为空
+	- 调用 InitCmdFactory
+	- 调用 ioutil.ReadFile(channelTxFile) 读取文件
+	- 调用 utils.UnmarshalEnvelope(fileData) 解压上一步读取的数据
+	- 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出，输出为 sCtxEnv
+	- 声明 common.BroadcastClient 类型变量 broadcastClient，执行broadcastClient.Send(sCtxEnv)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
