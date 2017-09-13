@@ -1,4 +1,4 @@
-### WriteFile代码结构
+### 代码结构
 ```
 	peer/
 	|-	chaincode/
@@ -12,43 +12,69 @@
 	
 ```
 ---
-### node
+### chaincode
 ---
-##### node/start.go
+##### chaincode/chaincode.go
 
-- initSysCCs 开启 chaincodes
-	- DeploySysCCs 部署系统 chaincodes
-		- 部署了许多个 SysCCs，包括 cscc，lscc，escc，vscc，gscc，rscc
-		- SysCCs 的结构详见 SystemChaincode 结构体
-		- buildSysCC 来建立 chaincode
+一些结构体与变量定义
+（下面这些就总结了在 chaincode 子文件夹下所实现的对 chaincode 的操作的方法）
 
-- server
-	- txprocessors 维护的是客户交易类型与对应交易处理器的map
-	- ledgermgmt.Initialize 初始化 ledgermgmt
-	- peer.GetPeerEndpoint 从缓存的配置中返回 peerEndpoint （peerEndpoint 是什么呢？）
-	- peer.GetSecureConfig() 返回了peer 的安全服务器配置（secure server configuration）
-	- peer.CreatePeerServer 创建了一个 comm.GRPCServer 实例，这个实例是用来 peer communications （指peer 间？还是 peer 接收其他信息的操作的）
-	- ccprovider.EnableCCInfoCache() 启用chaincode info 的缓存
-	- accesscontrol.NewCA() 为 chaincode 服务创建一个自签名的 CA
-	- createChaincodeServer 创建一个 chaincode 监听者
-	- pb.RegisterAdminServer 注册管理服务器
-	- endorser.NewEndorserServer 创建并返回一个新的背书服务器实例
-	- pb.RegisterEndorserServer 注册背书服务器
-	- viper.GetStringSlice 初始化 gossip 组件
-	- service.InitGossipService 初始化 gossip 服务
-	- initSysCCs()
-	- peer.Initialize 初始化 peer 所有的链，该函数应该在 ledger 和 gossip 准备好后调用
-	- peerServer.Start() 启动 grpc server
-	- ehubGrpcServer.Start() 启动 event hub server（这是什么）
+        const (
+            chainFuncName = "chaincode"
+            shortDes      = "Operate a chaincode: install|instantiate|invoke|package|query|signpackage|upgrade|list."
+            longDes       = "Operate a chaincode: install|instantiate|invoke|package|query|signpackage|upgrade|list."
+        )
 
+一些命令行解析
+
+一些与 chaincode 相关的变量
+
+        var (
+            chaincodeLang     string
+            chaincodeCtorJSON string
+            chaincodePath     string
+            chaincodeName     string
+            chaincodeUsr      string // Not used
+            chaincodeQueryRaw bool
+            chaincodeQueryHex bool
+            customIDGenAlg    string
+            chainID           string
+            chaincodeVersion  string
+            policy            string
+            escc              string
+            vscc              string
+            policyMarhsalled  []byte
+            orderingEndpoint  string
+            tls               bool
+            caFile            string
+            transient         string
+        )
+剩下的没看出什么来
 ---
-##### node/node.go
+##### chaincode/common.go
 
-没什么东西
----
-##### node/status.go
+- checkSpec 输入参数为 spec *pb.ChaincodeSpec
+	- 如果 spec 为空，报错
+	- 调用 platforms.Find(spec.Type)，根据 ChaincodeSpec_Type 返回特定平台的接口， ChaincodeSpec_Type 有如下类型：
 
-- status() 获取服务器状态
+            const (
+                ChaincodeSpec_UNDEFINED ChaincodeSpec_Type = 0
+                ChaincodeSpec_GOLANG    ChaincodeSpec_Type = 1 
+                ChaincodeSpec_NODE      ChaincodeSpec_Type = 2
+                ChaincodeSpec_CAR       ChaincodeSpec_Type = 3
+                ChaincodeSpec_JAVA      ChaincodeSpec_Type = 4
+            )
+    - 执行 platform.ValidateSpec(spec)，调用对应平台的对应的 ValidateSpec 方法，验证相关 chaincode
+
+- getChaincodeDeploymentSpec 输入参数为 spec *pb.ChaincodeSpec 以及一个布尔变量，返回 *pb.ChaincodeDeploymentSpec
+	- 调用 container.GetChaincodePackageBytes(spec)，该函数使用提供的 CCSpec 为 docker 容器生成 bytes，即 codePackageBytes
+	- 执行 chaincodeDeploymentSpec := &pb.ChaincodeDeploymentSpec{ChaincodeSpec: spec, CodePackage: codePackageBytes}，ChaincodeDeploymentSpec 结构体就是对 chaincode 部署的 specify
+	- 返回 chaincodeDeploymentSpec
+
+
+
+
+
 
 ---
 ### channel
@@ -56,15 +82,34 @@
 ##### channel/channel.go
 
 一些结构体与变量定义
+（下面这些就总结了在 channle 子文件夹下所实现的对 channel 的操作的方法）
+
+        const (
+            channelFuncName = "channel"
+            shortDes        = "Operate a channel: create|fetch|join|list|update."
+            longDes         = "Operate a channel: create|fetch|join|list|update."
+        )
+
 一些命令行解析
 
 - InitCmdFactory
+
+        type ChannelCmdFactory struct {
+            EndorserClient   pb.EndorserClient
+            Signer           msp.SigningIdentity
+            BroadcastClient  common.BroadcastClient	//发送消息给 orderer
+            DeliverClient    deliverClientIntf		//获取 block，其中有多种方法
+            BroadcastFactory BroadcastClientFactory //一个函数类型
+        }
+
 	- common.GetDefaultSignerFnc()  给客户端返回一个默认的 signer。**cmdFact.Signer 接收**
 	- common.GetBroadcastClientFnc 创建 BroadcastClient 接口的简单实例。**cmdFact.BroadcastFactory  接收**
 	- common.GetEndorserClientFnc() 给这个 peer 返回一个新的 背书者 客户端 连接。**cmdFact.EndorserClient 接收**
 	- credentials.NewClientTLSFromFile 为客户端从输入的 certificate 构建 TLS credentials
 	- ab.NewAtomicBroadcastClient(xx).Deliver(xxxx) 这是干嘛的？新建广播的？
 	- newDeliverClient() 返回了一个 deliverClient 结构体指针。**cmdFact.DeliverClient 接收**
+
+最后得到 ChannelCmdFactory 类型的变量 cmdFact
 
 ---
 ##### channel/create.go
@@ -99,6 +144,20 @@
 
 - 一些接口与结构体定义
 
+        type deliverClientIntf interface {
+            getSpecifiedBlock(num uint64) (*common.Block, error)
+            getOldestBlock() (*common.Block, error)
+            getNewestBlock() (*common.Block, error)
+            Close() error
+        }
+
+
+        type deliverClient struct {
+            conn    *grpc.ClientConn 					//代表一个客户端向 gRPC 的链接
+            client  ab.AtomicBroadcast_DeliverClient    //有发送与接收两个方法
+            chainID string
+        }
+
 - newDeliverClient 返回一个对  deliverClient 结构体的引用
 
 - seekHelper 同样通过调用 utils.CreateSignedEnvelope 返回了一个对应特定类型的 signed envelope 
@@ -112,8 +171,11 @@
 	- getOldestBlock 调用 seekOldest 与 readBlock
 	- getNewestBlock 调用 seekNewest 与 readBlcok
 	- Close 调用 r.conn.Close()
-	
-- getGenesisBlock select 语句，没太看懂这个 select 语言的 case 部分
+
+
+各种查找方法发送的参数是 chainID 与 SeekPosition
+    
+- getGenesisBlock select 语句，没太看懂这个 select 语言
 
 ---
 ##### channnel/fetchconfig.go
@@ -121,7 +183,7 @@
 - fetchCmd 命令行解析
 
 - fetch
-	- 调用 InitCmdFactory，返回 *ChannelCmdFactory
+	- 如果传入的 cf *ChannelCmdFactory 为空，则调用 InitCmdFactory
 	- 判断参数 args[0]（命令行的输入），根据参数取 block
 		- "oldest" 则执行 cf.DeliverClient.getOldestBlock()
 		- "newest"则执行 cf.DeliverClient.getNewestBlock()
@@ -140,13 +202,13 @@
 
 - getJoinCCSpec 输入参数为 *pb.ChaincodeSpec，该参数携带了 chaincode 的明确（specification），ChaincodeSpec 结构体中的字段就是定义一个 chaincode 所需的实际元数据
 	- ioutil.ReadFile(genesisBlockPath) 读取创世区块
-	- 执行 spec := &pb.ChaincodeSpec{xxx}，得到对 chaincode 的明确
+	- 执行 spec := &pb.ChaincodeSpec{xxx}，得到对 chaincode 的 CCSpec
 	- 返回 spec
 
 - executeJoin
 	- 执行 spec, err := getJoinCCSpec()
 	- 执行 invocation := &pb.ChaincodeInvocationSpec{ChaincodeSpec: spec}，得到 ChaincodeInvocationSpec 结构体的引用，该结构体携带了 chaincode 的函数和参数
-	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal（提案？）
+	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal
 	- 调用 putils.GetSignedProposal 返回了一个 *pb.SignedProposal 的 signedProp，SignedProposal 有两个字段，一个是 ProposalBytes，另一个是 Signature
 	- 调用 cf.EndorserClient.ProcessProposal 返回了一个 *pb.ProposalResponse 指针，ProposalResponse 结构体是从一个 endorser 返回给 proposal submitter 的
 	
@@ -165,11 +227,11 @@
 - getChannels，endorserClient 的方法，输入是 ChannelInfo 的结构体，其实就是一个  ChannelId
 	- 执行 invocation := &pb.ChaincodeInvocationSpec（注意一下 ChaincodeId 是 cscc，Input 是 GetChannels
 	- 执行 cc.cf.Signer.Serialize()
-	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal（提案？）
+	- 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal
 	- 调用 utils.GetSignedProposal 返回一个 signed proposal
 	- 调用 cc.cf.EndorserClient.ProcessProposal 得到 proposalResp
 	- 调用 proto.Unmarshal，将之前得到的 proposalResp 解压为一个 pb.ChannelQueryResponse 变量 channelQueryResponse
-	- 返回 channelQueryResponse.Channels
+	- 返回 channelQueryResponse.Channels，其实就是一个 channelID
 
 - list
 	- 调用 InitCmdFactory
@@ -190,7 +252,7 @@
 	- 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出
 	- 调用 utils.MarshalOrPanic 输入参数为上一步输出
 	- 调用 ioutil.WriteFile 写文件，输入参数为 channelTxFile 与上一步的输出
-	
+
 ---
 ##### channel/update.go
 
@@ -202,8 +264,47 @@
 	- 调用 InitCmdFactory
 	- 调用 ioutil.ReadFile(channelTxFile) 读取文件
 	- 调用 utils.UnmarshalEnvelope(fileData) 解压上一步读取的数据
-	- 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出，输出为 sCtxEnv
+	- 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出，输出为 sCtxEnv *cb.Envelope
 	- 声明 common.BroadcastClient 类型变量 broadcastClient，执行broadcastClient.Send(sCtxEnv)
+
+
+---
+### node
+---
+##### node/start.go
+
+- initSysCCs 开启 chaincodes
+	- DeploySysCCs 部署系统 chaincodes
+		- 部署了许多个 SysCCs，包括 cscc，lscc，escc，vscc，gscc，rscc
+		- SysCCs 的结构详见 SystemChaincode 结构体
+		- buildSysCC 来建立 chaincode
+
+- server
+	- txprocessors 维护的是客户交易类型与对应交易处理器的map
+	- ledgermgmt.Initialize 初始化 ledgermgmt
+	- peer.GetPeerEndpoint 从缓存的配置中返回 peerEndpoint （peerEndpoint 是什么呢？）
+	- peer.GetSecureConfig() 返回了peer 的安全服务器配置（secure server configuration）
+	- peer.CreatePeerServer 创建了一个 comm.GRPCServer 实例，这个实例是用来 peer communications （指peer 间？还是 peer 接收其他信息的操作的）
+	- ccprovider.EnableCCInfoCache() 启用chaincode info 的缓存
+	- accesscontrol.NewCA() 为 chaincode 服务创建一个自签名的 CA
+	- createChaincodeServer 创建一个 chaincode 监听者
+	- pb.RegisterAdminServer 注册管理服务器
+	- endorser.NewEndorserServer 创建并返回一个新的背书服务器实例
+	- pb.RegisterEndorserServer 注册背书服务器
+	- viper.GetStringSlice 初始化 gossip 组件
+	- service.InitGossipService 初始化 gossip 服务
+	- initSysCCs()
+	- peer.Initialize 初始化 peer 所有的链，该函数应该在 ledger 和 gossip 准备好后调用
+	- peerServer.Start() 启动 grpc server
+	- ehubGrpcServer.Start() 启动 event hub server（这是什么）
+---
+##### node/node.go
+
+没什么东西
+---
+##### node/status.go
+
+- status() 获取服务器状态
 
 
 
