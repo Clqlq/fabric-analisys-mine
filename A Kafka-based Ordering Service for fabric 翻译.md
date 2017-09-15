@@ -54,7 +54,7 @@ Solution 0. 假设每一条**链**都有一个独立的**分区**。每当OSNs �
 
 **Problem 4.** 和把每个 transaction 放入独立的 block 情况不同的是，现在 block 的编号不会转换为 Kafka 的该分区的偏移号。因此，如果**排序服务**接收到一个 Deliver 请求，比如说从 block 5 开始返回块，那么它根本就不知道 consumer 应该去找哪个偏移值（译者：对这段我理解不是很懂，是指如果要找到对应的 block，不能根据 相应的transaction 的 offset 找到吗？）
 
-**Solution 4a.** 也许我们可以使用 Block 消息类型中 Metadata 域，并且可以让 OSN 记下该 block所携带的（交易的）偏移值范围（比如，Block 4的 Metadata 包含内容：“offset: 63-64”）。那么如果访问 block 9 的客户端想要从 block 5 开始获取流，则它将通过将起始号设置为65来发出一个 Deliver RPC，并且 OSN 可以从偏移值65开始 replay 分区日志，当 transaction 数量先达到 batchSize或者先找到一个 TTC-X时，切下一个 block。这个方法有两个问题。第一，我们如果以 block 编号为参数的话，就违反了 Deliver API 的协议；第二，如果一个客户端错过了一堆 block，只是想获得随机的 block X（在不拥有 block X-1 的情况下），或者最近生成的 block（通过在 SeekInfo 消息中的 "NEWEST" 参数）客户端不知道该通过 Deliver 调用该传递的正确的 offset 值是多少，OSN也不知道。
+**Solution 4a.** 也许我们可以使用 Block 消息类型中 Metadata 域，并且可以让 OSN 记下该 block所携带的（交易的）偏移值范围（比如，Block 4的 Metadata 包含内容：“offset: 63-64”）。那么如果访问 block 4 （译者：原文是 block 9，但我觉得应该是写错了） 的客户端想要从 block 5 开始获取流，则它将通过将起始号设置为65来发出一个 Deliver RPC，并且 OSN 可以从偏移值65开始 replay 分区日志，当 transaction 数量先达到 batchSize或者先找到一个 TTC-X时，切下一个 block。这个方法有两个问题。第一，我们如果以偏移值为参数的话，就违反了 Deliver API 的协议，Deliver 要求以 block 编号为参数；第二，如果一个客户端错过了一堆 block，只是想获得随机的 block X（在不拥有 block X-1 的情况下），或者最近生成的 block（通过在 SeekInfo 消息中的 "NEWEST" 参数）客户端不知道该通过 Deliver 调用该传递的正确的 offset 值是多少，OSN也不知道。
 
 **Solution 4b.** 因此每一个 OSN 都需要对每条**链**维护一个表，用来映射每个 block 到它们所包含的第一个 offset，如表1所示。注意，这就意味着，如果一个 OSN 的内建查询表不包含所请求的 block 号的话，它就不能回应（accommodate）一个 Deliver 请求。
 
