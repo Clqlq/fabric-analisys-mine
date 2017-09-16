@@ -67,7 +67,7 @@ Solution 0. 假设每一条**链**都有一个独立的**分区**。每当OSNs �
 |	...		 |	...		   |
 `Table 1. Example lookup table corresponding to Fig. 4. A block number is mapped to the offset number of the first transaction that it should contain`
 
-这个查询表就使得我们不再需要 block metadata，并且可以让客户端在 Deliver 请求中指明正确的 offset。OSN 将请求的 block 编号转换为正确的 offset 值，并设置了一个 consumer 来查找它。现在，我们通过维护一些表，克服了上面所说的问题。但又出现了两个问题。
+这个查询表就使得我们不再需要 block metadata，并且可以让 OSN 在接收到客户端在 Deliver 请求后找到正确的 offset。OSN 将请求的 block 编号转换为正确的 offset 值，并设置了一个 consumer 来查找它。现在，我们通过维护一些表，克服了上面所说的问题。但又出现了两个问题。
 
 **Problem 5.** 第一，注意，每当 OSN 接收到一个 Deliver 请求，它必须从请求的 block 号开始从该**分区**检索所有的消息，将它们打包成 block 并签名。这一打包与签名过程在每一个 replay 请求中都会重复，并且耗费昂贵。**Problem 6.** 第二，因为我们在分区中有我们需要跳过的冗余的消息，因此回复一个 Deliver 请求并不像设置一个 consumer，寻找请求的 offset，replay所有的记录那样简单；查询表会在任意时刻被查询，交付逻辑开始变得越来越复杂，并且对查询表的检查会增加延迟。我们先不考虑第二个问题，针对第一个问题，为了解决它，我们需要在创建 blocks 时维持它们（peersist these blocks as we create them），当我们 replaying（译者：不知道这个怎么翻译合适）时，我们只需要传输已维持着的 blocks（transmit the persisted blocks）。
 
