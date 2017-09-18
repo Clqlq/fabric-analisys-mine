@@ -115,7 +115,10 @@
 			// the endorser's signature over the payload
 			Endorsement *Endorsement `protobuf:"bytes,6,opt,name=endorsement" json:"endorsement,omitempty"`
 		}
-
+---
+		type ChaincodeQueryResponse struct {
+			Chaincodes []*ChaincodeInfo `protobuf:"bytes,1,rep,name=chaincodes" json:"chaincodes,omitempty"`
+		}
 
 
 
@@ -176,16 +179,18 @@
 
 - ChaincodeCmdFactory 结构体 holds the clients used by ChaincodeCmd
 
-   type ChaincodeCmdFactory struct {
-   		EndorserClient  pb.EndorserClient
-   		Signer          msp.SigningIdentity
-   		BroadcastClient common.BroadcastClient
-   	}
+
+			type ChaincodeCmdFactory struct {
+				EndorserClient  pb.EndorserClient
+				Signer          msp.SigningIdentity
+				BroadcastClient common.BroadcastClient
+			}
+
 
 - InitCmdFactory 使用默认的 clients 初始化 ChaincodeCmdFactory
-  - endorserClient, err = common.GetEndorserClientFnc()
-  - signer, err := common.GetDefaultSignerFnc()
-  - broadcastClient, err = common.GetBroadcastClientFnc(orderingEndpoint, tls, caFile)
+	- endorserClient, err = common.GetEndorserClientFnc()
+	- signer, err := common.GetDefaultSignerFnc()
+	- broadcastClient, err = common.GetBroadcastClientFnc(orderingEndpoint, tls, caFile)
 
 
 - `func ChaincodeInvokeOrQuery(spec *pb.ChaincodeSpec, cID string, invoke bool, signer msp.SigningIdentity, endorserClient pb.EndorserClient, bc common.BroadcastClient,) (*pb.ProposalResponse, error) {}` 
@@ -199,16 +204,6 @@
 
 
 
-
-
-			- ChaincodeInvokeOrQuery
-			  - 调用 putils.CreateChaincodeProposalWithTransient，该函数通过给定的输入创建了一个 proposal，返回的内容里除了 proposal 还有该 proposal 的 transaction id，返回 prop *peer.Proposal
-			  - 调用 putils.GetSignedProposal(prop, signer)，通过给定的 proposal message 与 signing identity 返回了一个 signed proposal，即 signedProp *pb.SignedProposal
-			  - 调用 endorserClient.ProcessProposal 返回 proposalResp *pb.ProposalResponse
-			  - 判断 invoke
-			    -如果为真，则调用 putils.CreateSignedTx，将 proposal, endorsements, signer 压缩到 env *common.Envelope，调用 bc.Send(env)，最后返回 proposalResp
-			    - 为假，则直接返回 proposalResp
-
 ---
 ##### chaincode/install.go
 
@@ -216,10 +211,16 @@
 
 命令行解析
 
+- `func chaincodeInstall(cmd *cobra.Command, ccpackfile string, cf *ChaincodeCmdFactory) error {}`顺序执行下面的函数完成 chaincode 安装
+	- InitCmdFactory
+	- genChaincodeDeploymentSpec
+	- getPackageFromFile
+	- install
+
 - install 将 depspec 安装到 peer.address，输入参数为 msg proto.Message, cf *ChaincodeCmdFactory 
-  - 调用 utils.CreateInstallProposalFromCDS，返回 prop *peer.Proposal
-  - 调用 utils.GetSignedProposal，对 proposal 签名 
-  - 调用 cf.EndorserClient.ProcessProposal 对签名后的 signedproposal 拼上 response，得到 proposalResponse
+	- 调用 utils.CreateInstallProposalFromCDS，返回 prop *peer.Proposal
+	- 调用 utils.GetSignedProposal，对 proposal 签名 
+	- 调用 cf.EndorserClient.ProcessProposal 对签名后的 signedproposal 拼上 response，得到 proposalResponse
 
 - genChaincodeDeploymentSpec creates ChaincodeDeploymentSpec as the package to install （package 怎么理解？什么概念？）
 	- 调用 getChaincodeSpec(cmd)，返回 spec *pb.ChaincodeSpec
@@ -232,15 +233,54 @@
 
 
 
+---
+##### chaincode/instantiate.go
 
+		const instantiateDesc = "Deploy the specified chaincode to the network."
 
+- 命令行解析
 
+- `func chaincodeDeploy(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}`为文件下的主要函数
+	- 调用 InitCmdFactory(true, true) 完成命令行初始化
+	- 调用 instantiate 得到 env *protcommon.Envelope，获取足够多的背书，便可以将交易拼接成一个 envelope
+	- 执行 cf.BroadcastClient.Send(env) 把背书后的交易发给 orderer
 
+- `func instantiate(cmd *cobra.Command, cf *ChaincodeCmdFactory) (*protcommon.Envelope, error) {}`实例化 chaincode
+	- 执行 getChaincodeSpec(cmd) 获取链码规范
+	- 执行 getChaincodeDeploymentSpec(spec, false) 获取链码部署规范
+	- 执行 utils.CreateDeployProposalFromCDS(chainID, cds, creator, policyMarhsalled, []byte(escc), []byte(vscc)) 获取部署提案
+	- 执行 utils.GetSignedProposal(prop, cf.Signer) 得到签过名的提案
+	- 执行 cf.EndorserClient.ProcessProposal(context.Background(), signedProp) 发给背书节点背书并获得 proposalResponse
+	- 如果获得的 proposalResponse 不为空，则执行 utils.CreateSignedTx(prop, cf.Signer, proposalResponse) 将提案拼接成一个 transaction
+	- 返回这个 envelope
 
+---
+##### chaincode/invoke.go
 
+- `func chaincodeInvoke(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}`执行 chaincode 的调用
+	- 执行 InitCmdFactory(true, true) 初始化 ChaincodeCmdFactory
+	- 执行 chaincodeInvokeOrQuery(cmd, args, true, cf) 进行 chaincode 调用
+	- 执行 cf.BroadcastClient.Close() 关闭广播客户端
 
+---
+##### chaincode/list.go
 
+- `func getChaincodes(cmd *cobra.Command, cf *ChaincodeCmdFactory) error {}` 列出当前 chaincode，可选择列出安装未实例化了的 chaincode 还是已实例化的 chaincode
+	- 执行 InitCmdFactory(true, false)  初始化 ChaincodeCmdFactory
+	- 执行 cf.Signer.Serialize() 签名者序列化
+	- 对布尔变量 getInstalledChaincodes 与 getInstantiatedChaincodes 进行判断调用相关函数，生成相关查询的 proposal。可以进行如下查询：
+		- `utils.CreateGetInstalledChaincodesProposal(creator)`
+		- `utils.CreateGetChaincodesProposal(chainID, creator)`
+	- 执行完上面的函数调用，获得相应的 proposal
+	- 执行 utils.GetSignedProposal(prop, cf.Signer) 对 proposal 进行签名
+	- 执行 cf.EndorserClient.ProcessProposal(context.Background(), signedProp) 发送给 Endorser 对提案进行背书并返回 proposalResponse
+	- 将 proposalResponse.Response.Payload 解压到新定义的 ChaincodeQueryResponse 的结构体 cqr 中
+	- 打印出所查询到的 chaincode 的信息
 
+---
+##### chaincode/packager.go
+
+		const packageDesc = "Package the specified chaincode into a deployment spec."
 
 
 
