@@ -1,7 +1,3 @@
-## 每个文件从下往上调用
-
-
-
 ### 代码结构
 ```
 	peer/
@@ -15,8 +11,7 @@
 	|-	main.go
 	
 ```
----
-### channel
+
 ---
 ##### channel/channel.go
 
@@ -31,26 +26,94 @@
 
 一些命令行解析
 
+一些与 channel 相关的变量
+```go
+	type OrdererRequirement bool
+	type EndorserRequirement bool
+```
+```go
+	const (
+		EndorserRequired    EndorserRequirement = true
+		EndorserNotRequired EndorserRequirement = false
+		OrdererRequired     OrdererRequirement  = true
+		OrdererNotRequired  OrdererRequirement  = false
+	)
+```
+```go
+	var (
+		// join related variables.
+		genesisBlockPath string
+
+		// create related variables
+		chainID                    string
+		channelTxFile              string
+		orderingEndpoint           string
+		tls                        bool
+		caFile                     string
+		ordererTLSHostnameOverride string
+		timeout                    int
+	)
+
+```
+
+
 - InitCmdFactory
+	- common.GetDefaultSignerFnc()  给客户端返回一个默认的 signer。**cmdFact.Signer 接收**
+	- common.GetBroadcastClientFnc 创建 BroadcastClient 接口的简单实例。**cmdFact.BroadcastFactory  接收**
+	- common.GetEndorserClientFnc() 给这个 peer 返回一个新的 背书者 客户端 连接。**cmdFact.EndorserClient 接收**
+	- credentials.NewClientTLSFromFile 为客户端从输入的 certificate 构建 TLS credentials
+	- ab.NewAtomicBroadcastClient(xx).Deliver(xxxx) 这是干嘛的？新建广播的？
+  	- newDeliverClient() 返回了一个 deliverClient 结构体指针。**cmdFact.DeliverClient 接收**
+	- 最后得到 ChannelCmdFactory 类型的变量 cmdFact
 
-        type ChannelCmdFactory struct {
-            EndorserClient   pb.EndorserClient
-            Signer           msp.SigningIdentity
-            BroadcastClient  common.BroadcastClient	//发送消息给 orderer
-            DeliverClient    deliverClientIntf		//获取 block，其中有多种方法
-            BroadcastFactory BroadcastClientFactory //一个函数类型
-        }
-
-    - common.GetDefaultSignerFnc()  给客户端返回一个默认的 signer。**cmdFact.Signer 接收**
-    - common.GetBroadcastClientFnc 创建 BroadcastClient 接口的简单实例。**cmdFact.BroadcastFactory  接收**
-    - common.GetEndorserClientFnc() 给这个 peer 返回一个新的 背书者 客户端 连接。**cmdFact.EndorserClient 接收**
-    - credentials.NewClientTLSFromFile 为客户端从输入的 certificate 构建 TLS credentials
-    - ab.NewAtomicBroadcastClient(xx).Deliver(xxxx) 这是干嘛的？新建广播的？
-    - newDeliverClient() 返回了一个 deliverClient 结构体指针。**cmdFact.DeliverClient 接收**
-
-最后得到 ChannelCmdFactory 类型的变量 cmdFact
+剩下的也没什么了
 
 ---
+##### channel/create.go
+```
+	const createCmdDescription = "Create a channel"
+```
+- ### 生成通道的过程是不需要背书的
+
+- `func create(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}` 该文件下的调用各个函数的函数
+	- 执行 InitCmdFactory(EndorserNotRequired, OrdererRequired)
+	- 执行 executeCreate(cf)
+
+- `func executeCreate(cf *ChannelCmdFactory) error {}` 该文件下的主要函数
+	- 执行 sendCreateChainTransaction(cf) 发送新建链的交易
+	- 执行 getGenesisBlock(cf) 获取创世区块
+	- 执行 proto.Marshal(block)，将创世区块解压
+	- `file := chainID + ".block"`，执行 ioutil.WriteFile(file, b, 0644)，写文件
+
+- `func sendCreateChainTransaction(cf *ChannelCmdFactory) error {}`
+	- 通过判断 channelTxFile 决定是执行 createChannelFromConfigTx(channelTxFile) 还是执行 createChannelFromDefaults(cf)，目的都是生成一个创建通道的交易并打包成 envelope 类型
+	- 执行 sanityCheckAndSignConfigTx(chCrtEnv) 主要是在输入的 chCrtEnv 上附加上签名，并重新打包成 envelope 格式
+	- 执行 broadcastClient.Send(chCrtEnv) 将 chCrtEnv 发给 orderer
+	- 执行 broadcastClient.Close()
+
+- `func createChannelFromConfigTx(configTxFileName string) (*cb.Envelope, error) {}` 从配置文件中生成 channel
+	- 执行 ioutil.ReadFile(configTxFileName) 从配置文件中读取配置
+	- 执行 utils.UnmarshalEnvelope(cftx) 将读取到的数据解压
+
+
+- `func createChannelFromDefaults(cf *ChannelCmdFactory) (*cb.Envelope, error) {}` 从默认生成 channel
+
+
+
+
+
+
+
+
+
+
+
+
+```
+--
+---
+
+-
 ##### channel/create.go
 
 - **const createCmdDescription = "Create a channel"**
@@ -78,6 +141,7 @@
   - 如果传入参数中的 cf *ChannelCmdFactory 为空，则调用 /channel/channel.go 的 InitCmdFactory 函数
   - 调用 executeCreate(cf)
 
+```
 ---
 ##### channel/deliverclient.go
 

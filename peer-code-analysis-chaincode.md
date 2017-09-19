@@ -204,11 +204,12 @@
 ##### chaincode/install.go
 
 		const installDesc = "Package the specified chaincode into a deployment spec and save it on the peer's path."
+### 安装 chaincode 需要背书但不需排序
 
-命令行解析
+- 命令行解析
 
 - `func chaincodeInstall(cmd *cobra.Command, ccpackfile string, cf *ChaincodeCmdFactory) error {}`顺序执行下面的函数完成 chaincode 安装
-	- InitCmdFactory
+	- InitCmdFactory(true, false)
 	- genChaincodeDeploymentSpec
 	- getPackageFromFile
 	- install
@@ -233,6 +234,7 @@
 ##### chaincode/instantiate.go
 
 		const instantiateDesc = "Deploy the specified chaincode to the network."
+### 实例化 chaincode 需要背书也需要排序
 
 - 命令行解析
 
@@ -253,6 +255,8 @@
 ---
 ##### chaincode/invoke.go
 
+### 调用 chaincode 需要背书也需要排序
+
 - `func chaincodeInvoke(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}`执行 chaincode 的调用
 	- 执行 InitCmdFactory(true, true) 初始化 ChaincodeCmdFactory
 	- 执行 chaincodeInvokeOrQuery(cmd, args, true, cf) 进行 chaincode 调用
@@ -260,6 +264,8 @@
 
 ---
 ##### chaincode/list.go
+
+### 列举 chaincode 需要背书无需排序
 
 - `func getChaincodes(cmd *cobra.Command, cf *ChaincodeCmdFactory) error {}` 列出当前 chaincode，可选择列出安装未实例化了的 chaincode 还是已实例化的 chaincode
 	- 执行 InitCmdFactory(true, false)  初始化 ChaincodeCmdFactory
@@ -277,6 +283,8 @@
 ##### chaincode/package.go
 
 		const packageDesc = "Package the specified chaincode into a deployment spec."
+
+### 无需背书也无需排序
 
 - `func chaincodePackage(cmd *cobra.Command, args []string, cdsFact ccDepSpecFactory, cf *ChaincodeCmdFactory) error {}` 创建 chaincode package，若成功则将 chaincode 名（hash 值）打印输出，以便后面与 chaincode 相关的 CLI 命令使用
 	- 执行 InitCmdFactory(false, false) 初始化命令
@@ -297,6 +305,8 @@
 ---
 ##### chaincode/signpackage.go
 
+### 无需背书也无需排序
+
 - `func signpackage(cmd *cobra.Command, ipackageFile string, opackageFile string, cf *ChaincodeCmdFactory) error {}`
 	- 执行 InitCmdFactory(false, false) 初始化命令
 	- 执行 ioutil.ReadFile(ipackageFile) 读取 package 文件
@@ -308,6 +318,8 @@
 
 ---
 ##### chaincode/upgrade.go
+
+### 无需背书也无需排序
 
 - `func chaincodeUpgrade(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}`
 	- 执行 InitCmdFactory(false, false) 初始化命令
