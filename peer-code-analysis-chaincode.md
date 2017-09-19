@@ -1,6 +1,3 @@
-## 每个文件从下往上调用着看
-
-
 
 ### 代码结构
 ```
@@ -9,8 +6,7 @@
 	|-	channel/
 	|-	clilogging/
 	|-	common/
-	|-	gossip/
-	|-	node/
+	|-	gossip/	|-	node/
 	|-	version/
 	|-	main.go
 	
@@ -278,20 +274,55 @@
 	- 打印出所查询到的 chaincode 的信息
 
 ---
-##### chaincode/packager.go
+##### chaincode/package.go
 
 		const packageDesc = "Package the specified chaincode into a deployment spec."
 
+- `func chaincodePackage(cmd *cobra.Command, args []string, cdsFact ccDepSpecFactory, cf *ChaincodeCmdFactory) error {}` 创建 chaincode package，若成功则将 chaincode 名（hash 值）打印输出，以便后面与 chaincode 相关的 CLI 命令使用
+	- 执行 InitCmdFactory(false, false) 初始化命令
+	- 执行 getChaincodeSpec(cmd) 得到链码规范
+	- 执行 getChaincodeInstallPackage(cds, cf) 获取链码安装的包
+	- 执行 ioutil.WriteFile(fileToWrite, bytesToWrite, 0700) 将部署规范写入文件
+
+- `func getChaincodeInstallPackage(cds *pb.ChaincodeDeploymentSpec, cf *ChaincodeCmdFactory) ([]byte, error) {}` 返回一个原始的ChaincodeDeploymentSpec或带有ChaincodeDeploymentSpec和（可选）签名的信封
 
 
+---
+##### chaincode/query.go
+
+- 命令行解析
+
+- `func chaincodeQuery(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}` 通过调用 chaincodeInvokeOrQuery 并且 `invoke` 参数设置为 false 实现查询
+
+---
+##### chaincode/signpackage.go
+
+- `func signpackage(cmd *cobra.Command, ipackageFile string, opackageFile string, cf *ChaincodeCmdFactory) error {}`
+	- 执行 InitCmdFactory(false, false) 初始化命令
+	- 执行 ioutil.ReadFile(ipackageFile) 读取 package 文件
+	- 执行 utils.UnmarshalEnvelopeOrPanic(b) 对 package 的文件解压
+	- 执行 ccpackage.SignExistingPackage(env, cf.Signer) 在已签名的 package 上加签名
+	- 执行 utils.MarshalOrPanic(env) 压缩
+	- 执行你个ioutil.WriteFile(opackageFile, b, 0700) 写文件
 
 
+---
+##### chaincode/upgrade.go
 
+- `func chaincodeUpgrade(cmd *cobra.Command, args []string, cf *ChaincodeCmdFactory) error {}`
+	- 执行 InitCmdFactory(false, false) 初始化命令
+	- 执行 upgrade(cmd, cf) 进行升级
+	- 执行 cf.BroadcastClient.Send(env)，将签名过的 envelope 发送到 orderer
+	- 执行 cf.BroadcastClient.Close()
 
-
-
-
-
+- `func upgrade(cmd *cobra.Command, cf *ChaincodeCmdFactory) (*protcommon.Envelope, error) {}`
+	- 执行 getChaincodeSpec(cmd) 获取链码规范
+	- 执行 getChaincodeDeploymentSpec(spec, false) 获取链码部署规范
+	- 执行 utils.CreateUpgradeProposalFromCDS(chainID, cds, creator, policyMarhsalled, []byte(escc), []byte(vscc)) 生成升级链码的 proposal
+	- 执行 utils.GetSignedProposal(prop, cf.Signer) 获取签过名的 signedProp
+	- 执行 cf.EndorserClient.ProcessProposal(context.Background(), signedProp) 将 signedProp 发送给 Endorser 背书并获取返回的 proposalResponse
+	- 执行 utils.CreateSignedTx(prop, cf.Signer, proposalResponse) 提案组合成一个签过名的交易 env *common.Envelope
+	- 返回 env
 
 
 
