@@ -73,7 +73,7 @@
 ```
 	const createCmdDescription = "Create a channel"
 ```
-- ### 生成通道的过程是不需要背书的
+### 生成通道的过程是不需要背书的
 
 - `func create(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}` 该文件下的调用各个函数的函数
 	- 执行 InitCmdFactory(EndorserNotRequired, OrdererRequired)
@@ -91,184 +91,131 @@
 	- 执行 broadcastClient.Send(chCrtEnv) 将 chCrtEnv 发给 orderer
 	- 执行 broadcastClient.Close()
 
-- `func createChannelFromConfigTx(configTxFileName string) (*cb.Envelope, error) {}` 从配置文件中生成 channel
+- `func createChannelFromConfigTx(configTxFileName string) (*cb.Envelope, error) {}` 从配置文件中生成新建 channel 的交易
 	- 执行 ioutil.ReadFile(configTxFileName) 从配置文件中读取配置
 	- 执行 utils.UnmarshalEnvelope(cftx) 将读取到的数据解压
 
 
-- `func createChannelFromDefaults(cf *ChannelCmdFactory) (*cb.Envelope, error) {}` 从默认生成 channel
+- `func createChannelFromDefaults(cf *ChannelCmdFactory) (*cb.Envelope, error) {}` 从默认中生成新建 channel 的交易
+	- 执行 mspmgmt.GetLocalMSP().GetDefaultSigningIdentity() 获取签名者
+	- 执行 channelconfig.MakeChainCreationTransaction(chainID, genesisconfig.SampleConsortiumName, signer) 将默认的一些配置拼接成 chCrtEnv *cb.Envelop 
 
+- `func sanityCheckAndSignConfigTx(envConfigUpdate *cb.Envelope) (*cb.Envelope, error) {}` 主要就是将接收到的 envelop 信息解压，核对相关信息，附加本地签名者的签名（与之前的签名区别是不是就在于之前的签名是 org 里面的 Admin 签的，这儿的签名是发起建立通道的 peer 签的？），再将信息打包成 envelop
 
-
-
-
-
-
-
-
-
-
-
-```
---
----
-
--
-##### channel/create.go
-
-- **const createCmdDescription = "Create a channel"**
-
-- createChannelFromDefaults 返回了一个 *cb.Envelope（通过函数名猜测是指 “从默认创建通道”吗）
-
-- createChannelFromConfigTx 返回了一个 *cb.Envelope （估计是通过配置文件来“创建通道”）
-
-- sanityCheckAndSignConfigTx
-  - 做了很多数据的 unmarshal 操作
-  - 通过调用 utils.CreateSignedEnvelope 返回了一个对应特定类型的 signed envelope 
-
-- sendCreateChainTransaction
-  - 执行通道创建
-  - 调用 sanityCheckAndSignConfigTx，返回 chCrtEnv
-  - 新建了一个 common.BroadcastClient 接口的变量，调用 Send 方法，发送了上面得到的 chCrtEnv
-
-- executeCreate
-  - 调用 sendCreateChainTransaction
-  - 调用 getGenesisBlock 获取创世区块
-  - proto.Marshal 对所获的块解压
-  - 调用 ioutil.WriteFile 写了一个 chainID.block 的区块（不过 chainID 从何而来没找到，估计是个全局变量）
-
-- create 
-  - 如果传入参数中的 cf *ChannelCmdFactory 为空，则调用 /channel/channel.go 的 InitCmdFactory 函数
-  - 调用 executeCreate(cf)
-
-```
 ---
 ##### channel/deliverclient.go
 
 - 一些接口与结构体定义
 
-        type deliverClientIntf interface {
-            getSpecifiedBlock(num uint64) (*common.Block, error)
-            getOldestBlock() (*common.Block, error)
-            getNewestBlock() (*common.Block, error)
-            Close() error
-        }
+```go
+type deliverClientIntf interface {
+	getSpecifiedBlock(num uint64) (*common.Block, error)
+	getOldestBlock() (*common.Block, error)
+	getNewestBlock() (*common.Block, error)
+	Close() error
+}
+```
+```go
+type deliverClient struct {
+	conn    *grpc.ClientConn
+	client  ab.AtomicBroadcast_DeliverClient
+	chainID string
+}
+```
+- 该文件主要是给 deliverClient 定义了一系列的方法，用来进行各种取块的操作，核心是下面几个方法：
+```go
+	- func (r *deliverClient) seekSpecified(blockNumber uint64) error {}
+	- func (r *deliverClient) seekOldest() error {}
+	- func (r *deliverClient) seekNewest() error {}
+	- func (r *deliverClient) readBlock() (*common.Block, error) {}
+```
+在上述方法的基础上又定义了几个获取 block 的方法：
+```go
+	- func (r *deliverClient) getSpecifiedBlock(num uint64) (*common.Block, error) {}
+	- func (r *deliverClient) getOldestBlock() (*common.Block, error) {}
+	- func (r *deliverClient) getNewestBlock() (*common.Block, error) {
+```	
+此外还定义了 `func getGenesisBlock(cf *ChannelCmdFactory) (*common.Block, error) {}`的方法
 
-
-        type deliverClient struct {
-            conn    *grpc.ClientConn 					//代表一个客户端向 gRPC 的链接
-            client  ab.AtomicBroadcast_DeliverClient    //有发送与接收两个方法
-            chainID string
-        }
-
-- newDeliverClient 返回一个对  deliverClient 结构体的引用
-
-- seekHelper 同样通过调用 utils.CreateSignedEnvelope 返回了一个对应特定类型的 signed envelope 
-
-- r *deliverClient 的方法
-  - seekSpecified 调用 r.client.Send(seekHelper())，需要传入参数 blockNumber
-  - seekOldest 无需参数
-  - seekNewest 无需参数
-  - readBlock 读取 block
-  - getSpecifiedBlock 调用 seekSpecified 与readBlock
-  - getOldestBlock 调用 seekOldest 与 readBlock
-  - getNewestBlock 调用 seekNewest 与 readBlcok
-  - Close 调用 r.conn.Close()
-
-
-各种查找方法发送的参数是 chainID 与 SeekPosition
-​    
-- getGenesisBlock select 语句，没太看懂这个 select 语言
+- 总结来看，该文件下定义的方法核心都是先调用`func seekHelper(chainID string, position *ab.SeekPosition) *common.Envelope {}`函数，将需要要发出的查询信息打包，然后再调用 r.client.Send() 将查询信息发送到 orderer
 
 ---
-##### channnel/fetchconfig.go
+##### channel/fetchconfig.go
 
-- fetchCmd 命令行解析
+### 获取配置无需背书节点，需要排序节点
 
-- fetch
-  - 如果传入的 cf *ChannelCmdFactory 为空，则调用 InitCmdFactory
-  - 判断参数 args[0]（命令行的输入），根据参数取 block
-    - "oldest" 则执行 cf.DeliverClient.getOldestBlock()
-    - "newest"则执行 cf.DeliverClient.getNewestBlock()
-    - "config" 则执行 iBlock = cf.DeliverClient.getNewestBlock()，lc = utils.GetLastConfigIndexFromBlock(iBlock)，block = cf.DeliverClient.getSpecifiedBlock(lc)
-    - 默认则执行 cf.DeliverClient.getSpecifiedBlock(uint64(num))
+- 一些命令行解析
 
-  - 执行proto.Marshal(block)，压缩 block 
-  - 调用 ioutil.WriteFile 写文件
+- `func fetch(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}`该文件下的主要函数，通过调用 deliverclient.go 下的方法来获取块或者通道的配置
+	- 执行 InitCmdFactory(EndorserNotRequired, OrdererRequired)
+	- 根据传入的命令参数选择采取下述动作：
+		- cf.DeliverClient.getOldestBlock()
+		- cf.DeliverClient.getNewestBlock()
+		- 从 Block 中获取最新的配置
+			- 执行 utils.GetLastConfigIndexFromBlock(iBlock) 获取最新的配置块的编号
+			- 执行 cf.DeliverClient.getSpecifiedBlock(lc) 取得配置块
+
+	- 执行 proto.Marshal(block) 将取得的块压缩
+	- 执行 ioutil.WriteFile(file, b, 0644) 将压缩后的内容写入文件
 
 ---
 ##### channel/join.go
 
-- **const commandDescription = "Joins the peer to a chain."**
+### 加入通道需要背书节点，无需排序节点
 
-- joinCmd 命令行解析
+```go
+		const commandDescription = "Joins the peer to a chain."
+```
 
-- getJoinCCSpec 输入参数为 *pb.ChaincodeSpec，该参数携带了 chaincode 的明确（specification），ChaincodeSpec 结构体中的字段就是定义一个 chaincode 所需的实际元数据
-  - ioutil.ReadFile(genesisBlockPath) 读取创世区块
-  - 执行 spec := &pb.ChaincodeSpec{xxx}，得到对 chaincode 的 CCSpec
-  - 返回 spec
+- `func join(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}` 该文件下的主要函数
+	- 执行  InitCmdFactory(EndorserRequired, OrdererNotRequired)
+	- 执行 executeJoin(cf)
 
-- executeJoin
-  - 执行 spec, err := getJoinCCSpec()
-  - 执行 invocation := &pb.ChaincodeInvocationSpec{ChaincodeSpec: spec}，得到 ChaincodeInvocationSpec 结构体的引用，该结构体携带了 chaincode 的函数和参数
-  - 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal
-  - 调用 putils.GetSignedProposal 返回了一个 *pb.SignedProposal 的 signedProp，SignedProposal 有两个字段，一个是 ProposalBytes，另一个是 Signature
-  - 调用 cf.EndorserClient.ProcessProposal 返回了一个 *pb.ProposalResponse 指针，ProposalResponse 结构体是从一个 endorser 返回给 proposal submitter 的
-
-- join
-  - 一些命令行处理
-  - InitCmdFactory
-  - 执行 executeJoin
+- `func executeJoin(cf *ChannelCmdFactory) (err error) {}` 
+	- 调用 getJoinCCSpec() 获取返回的链码规范
+	- 后续就和之前提到过的很多对链码的操作一样，构造一个提案，并将提案发送给 Endorser 并获取对提案的回复
+	- 如果 proposalResp 正确，则表示 peer 加入通道成功
 
 ---
 ##### channel/list.go
 
-- 定义一个 endorserClient 的结构体
+### 列出通道需要背书节点，无需排序节点
 
-- listCmd 命令行解析
-
-- getChannels，endorserClient 的方法，输入是 ChannelInfo 的结构体，其实就是一个  ChannelId
-  - 执行 invocation := &pb.ChaincodeInvocationSpec（注意一下 ChaincodeId 是 cscc，Input 是 GetChannels
-  - 执行 cc.cf.Signer.Serialize()
-  - 调用 putils.CreateProposalFromCIS 通过给定的序列化的实体与 ChaincodeInvocationSpec 结构体，返回了一个 proposal
-  - 调用 utils.GetSignedProposal 返回一个 signed proposal
-  - 调用 cc.cf.EndorserClient.ProcessProposal 得到 proposalResp
-  - 调用 proto.Unmarshal，将之前得到的 proposalResp 解压为一个 pb.ChannelQueryResponse 变量 channelQueryResponse
-  - 返回 channelQueryResponse.Channels，其实就是一个 channelID
-
-- list
-  - 调用 InitCmdFactory
-  - 执行 client := &endorserClient{cf}
-  - 调用 client.getChannels()，在 log 中输出相关信息，如 `"Channels peers has joined to: %s", channel.ChannelId`
+- `func list(cf *ChannelCmdFactory) error {}` 该文件下的主要函数
+	- 执行 InitCmdFactory(EndorserRequired, OrdererNotRequired)
+	- 执行 client := &endorserClient{cf} 新建一个 endorserClient，endorserClient 这个结构体里只有 cf *ChannelCmdFacory 这个字段
+	- 执行 client.getChannels() 打印出 peers 已经加入过的 channels
+	
+- `func (cc *endorserClient) getChannels() ([]*pb.ChannelInfo, error) {}`
+	- 和前面提到过的过程基本一致，即构造一个 proposal，发送给 endorser，获取在 endoerser 的回复
+###（发现其实所有的 peer 操作的核心都是 `cc.cf.EndorserClient.ProcessProposal` 这个函数的实现，它如何怎么处理各种提案即为后续学习的重点）
 
 ---
-##### channel/signconfigtx.go
+##### channel/signconfig.go
 
-- signconfigtxCmd 命令行解析
+### 无需背书节点，无需排序节点
 
-- sign
-  - 判断 channelTxFile 即 configtx 文件路径是否为空
-  - 调用 InitCmdFactory
-  - 调用 ioutil.ReadFile(channelTxFile) 读取文件
-  - 调用 utils.UnmarshalEnvelope(fileData) 解压上一步读取的数据
-  - 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出
-  - 调用 utils.MarshalOrPanic 输入参数为上一步输出
-  - 调用 ioutil.WriteFile 写文件，输入参数为 channelTxFile 与上一步的输出
+- `func sign(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}` 对配置交易进行签名
+	- 执行 InitCmdFactory(EndorserNotRequired, OrdererNotRequired)
+	- 执行 ioutil.ReadFile(channelTxFile) 读取通道配置文件
+	- 执行 sanityCheckAndSignConfigTx(ctxEnv) 加上签名
+	- 执行 utils.MarshalOrPanic(sCtxEnv) 压缩 envelop 
+	- 执行 ioutil.WriteFile(channelTxFile, sCtxEnvData, 0660) 写文件
 
 ---
 ##### channel/update.go
 
-- updateCmd 命令行解析
+### 无需背书节点，需要排序节点
 
-- update
-  - 判断 chainID 是否为空
-  - 判断 channelTxFile 即 configtx 文件路径是否为空
-  - 调用 InitCmdFactory
-  - 调用 ioutil.ReadFile(channelTxFile) 读取文件
-  - 调用 utils.UnmarshalEnvelope(fileData) 解压上一步读取的数据
-  - 调用 channel.go 下的函数 sanityCheckAndSignConfigTx，输入参数为上一步的输出，输出为 sCtxEnv *cb.Envelope
-  - 声明 common.BroadcastClient 类型变量 broadcastClient，执行broadcastClient.Send(sCtxEnv)
-
+- `func update(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {}`
+	- 提供 channelID 与 通道配置文件
+	- 执行 InitCmdFactory(EndorserNotRequired, OrdererRequired)
+	- 执行 ioutil.ReadFile(channelTxFile) 读取通道配置文件
+	- 执行 utils.UnmarshalEnvelope(fileData) 解压数据
+	- 执行 sanityCheckAndSignConfigTx(ctxEnv) 加上签名
+	- 执行 broadcastClient.Send(sCtxEnv) 将 envelop 发送给 orderer
+	- 执行 broadcastClient.Close()
+	
 
 ---
 ### node
