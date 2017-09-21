@@ -217,51 +217,6 @@ type deliverClient struct {
 	- 执行 broadcastClient.Close()
 	
 
----
-### node
----
-##### node/start.go
-
-- initSysCCs 开启 chaincodes
-  - DeploySysCCs 部署系统 chaincodes
-    - 部署了许多个 SysCCs，包括 cscc，lscc，escc，vscc，gscc，rscc
-    - SysCCs 的结构详见 SystemChaincode 结构体
-    - buildSysCC 来建立 chaincode
-
-- server
-  - txprocessors 维护的是客户交易类型与对应交易处理器的map
-  - ledgermgmt.Initialize 初始化 ledgermgmt
-  - peer.GetPeerEndpoint 从缓存的配置中返回 peerEndpoint （peerEndpoint 是什么呢？）
-  - peer.GetSecureConfig() 返回了peer 的安全服务器配置（secure server configuration）
-  - peer.CreatePeerServer 创建了一个 comm.GRPCServer 实例，这个实例是用来 peer communications （指peer 间？还是 peer 接收其他信息的操作的）
-  - ccprovider.EnableCCInfoCache() 启用chaincode info 的缓存
-  - accesscontrol.NewCA() 为 chaincode 服务创建一个自签名的 CA
-  - createChaincodeServer 创建一个 chaincode 监听者
-  - pb.RegisterAdminServer 注册管理服务器
-  - endorser.NewEndorserServer 创建并返回一个新的背书服务器实例
-  - pb.RegisterEndorserServer 注册背书服务器
-  - viper.GetStringSlice 初始化 gossip 组件
-  - service.InitGossipService 初始化 gossip 服务
-  - initSysCCs()
-  - peer.Initialize 初始化 peer 所有的链，该函数应该在 ledger 和 gossip 准备好后调用
-  - peerServer.Start() 启动 grpc server
-  - ehubGrpcServer.Start() 启动 event hub server（这是什么）
----
-##### node/node.go
-
-没什么东西
----
-##### node/status.go
-
-- status() 获取服务器状态
-
-
-
-
-
-
-
-
 
 
 
