@@ -59,6 +59,7 @@ type Comm interface {
 	Stop()
 
 ```
+---
 
 ## comm_impl.go
 
@@ -129,10 +130,47 @@ type commImpl struct {
 
 - `func (c *commImpl) Stop()` 对 `c *commImpl` 中的很多字段执行了诸如 Stop/Close/shutdown 之类的操作（具体见代码）
 
+---
+
+## conn.go
+在　comm_impl.go　中定义了 commImpl 结构体，其中有一个字段 conn，其类型为　*connectionStore， connectionStore　类型定义如下：
+```go
+type connectionStore struct {
+	logger           *logging.Logger        // logger
+	isClosing        bool                   // 这个 connection store 是否正在关闭
+	connFactory      connFactory            // 创建一个到远程 peer　的连接
+	sync.RWMutex                            // 同步对共享变量的访问
+	pki2Conn         map[string]*connection // mapping between pkiID to connections
+	destinationLocks map[string]*sync.Mutex //mapping between pkiIDs and locks,
+	// 用于防止并发连接建立到同一个远程端点
+}
+```
+connectionStore 中 pki2Conn 字段的类型为 map[string]*connection，connection　是一结构体类型，定义也在本文件下，定义如下：
+```go
+type connection struct {
+	cancel       context.CancelFunc
+	info         *proto.ConnectionInfo
+	outBuff      chan *msgSending
+	logger       *logging.Logger                 // logger
+	pkiID        common.PKIidType                // 远程端点的 pkiID
+	handler      handler                         // 函数在消息接收时调用
+	conn         *grpc.ClientConn                // gRPC连接到远程端点
+	cl           proto.GossipClient              // 远程端点的gRPC存根
+	clientStream proto.Gossip_GossipStreamClient // client-side stream to remote endpoint
+	serverStream proto.Gossip_GossipStreamServer // server-side stream to remote endpoint
+	stopFlag     int32                           // indicates whether this connection is in process of stopping
+	stopChan     chan struct{}                   // a method to stop the server-side gRPC call from a different go-routine
+	sync.RWMutex                                 // synchronizes access to shared variables
+}
+```
+所以本文件下主要就是对上述两种结构体类型定义了很多方法，我们来一一的看一看。
+
+#### connectionStore
+- `func (cs *connectionStore) getConnection(peer *RemotePeer) (*connection, error)`　新建了一个 connection，得到 *connection 并将该 *connection　存储进 connectionStore　的 pki2Conn 字段这个字典中。在返回之前，创建了一个 goroutine　调用 *connnection.serviceConnection　方法
 
 
-
-
+#### connection
+- `func (conn *connection) serviceConnection() error` 
 
 
 
