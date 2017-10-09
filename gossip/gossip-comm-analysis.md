@@ -168,18 +168,49 @@ type connection struct {
 #### connectionStore
 - `func (cs *connectionStore) getConnection(peer *RemotePeer) (*connection, error)`　新建了一个 connection，得到 *connection 并将该 *connection　存储进 connectionStore　的 pki2Conn 字段这个字典中。在返回之前，创建了一个 goroutine　调用 *connnection.serviceConnection　方法
 
+- `func (cs *connectionStore) connNum() int`　就是返回 *connectionStore.pki2Conn 的键对值数目
+
+- `func (cs *connectionStore) closeConn(peer *RemotePeer)` 先锁住该 cs *connectionStore，通过删除 pki to connection 的键对值来关闭一个连接
+
+- `func (cs *connectionStore) shutdown()` 就是关闭所有的连接
+
+- `func (cs *connectionStore) onConnected(serverStream proto.Gossip_GossipStreamServer, connInfo *proto.ConnectionInfo) *connection`　注册新的连接到 connectionStore　中，如果之前 connection 就存在的话，先调用 *connection.close()　来关闭该连接
+
+- `func (cs *connectionStore) registerConn(connInfo *proto.ConnectionInfo, serverStream proto.Gossip_GossipStreamServer) *connection` 新建一个 connection 并存入 *connectionStore.pki2Conn 字典中
+
+- `func (cs *connectionStore) closeByPKIid(pkiID common.PKIidType) ` 从 *connection.pki2Conn 字典中删除对应项
 
 #### connection
+- `func (conn *connection) close()` 
+	- 首先调用 `*connection.drainOutputBuffer` 把 `*connection.outBuff`　清空
+	- 然后关闭 `*connection.clientStream`（到远程端点的 client-side stream）
+	- 然后关闭 `*connection.conn`（到远程端点的 gRPC 连接）
+	- 执行 `*connection.cancel`
+	
+- `func (conn *connection) send(msg *proto.SignedGossipMessage, onErr func(error), shouldBlock blockingBehavior)`　
+	- 先锁定该 conneciton
+	- 将要发送的消息打包成 msgSending　结构体的形式
+	- 将该结构体是指针传入 *connection.outBuff 通道中
+
 - `func (conn *connection) serviceConnection() error` 
+	- 新建了两个通道 errChan 与 msgChan 分别接受 error 信息与 *proto.SignedGossipMessage　类型的信息， errChan 大小为1，msgChan 大小为20
+	- 启动一个 goroutine 调用 conn.readFromStream(errChan, msgChan) （感觉就是通过 stream.Recv() 获取 envelope，然后将里面的 message　写入通道中，所以方法名叫 readFromStream）
+	- 启动一个 goroutine 调用 conn.writeToStream()
+	- select 语句，把相关信息写入对应通道
+
+- `func (conn *connection) writeToStream()` 没太明白
+
+- `func (conn *connection) drainOutputBuffer()`　清空 *connection.outBuff
+	- 通过不断执行`<- *connection.outBuff`即可将通道中的信息一个个释放
+	
+- `func (conn *connection) readFromStream(errChan chan error, msgChan chan *proto.SignedGossipMessage)`　感觉就是通过 stream.Recv() 获取 envelope，然后将里面的 message　写入通道 msgChan 中
 
 
-
-
-
-
-
-
-
+- `func (conn *connection) getStream() stream`　
+	- 先判断 *connection.clientStream 与 *connection.serverStream 如果都不为空则肯定哪儿有问题，返回 error
+	- 先尝试返回 *connection.clientStream　
+	- 若前者为空则尝试返回 *connection.serverStream 
+	- 若前两者都为空则返回 nil
 
 
 
