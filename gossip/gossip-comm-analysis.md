@@ -209,6 +209,73 @@ type connection struct {
 	- 若前者为空则尝试返回 *connection.serverStream 
 	- 若前两者都为空则返回 nil
 
+## crypto.go
+- `func writeFile(filename string, keyType string, data []byte) error` 先创建文件再调用 `pem.Encode()`　方法去写文件
+
+- `func GenerateCertificatesOrPanic() tls.Certificate`　生成证书
+	- 执行 `privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)`　生成一对公钥与私钥
+	- 调用 `x509.CreateCertificate()` 来基于所给模板（包括上面得到的 privateKey.PublicKey 与 privateKey，生成新证书的 rawBytes
+	- 调用上面提到的 writeFile 函数，将 rawBytes 写入证书文件 certKeyFile 中去
+	- 执行 `privBytes, err := x509.MarshalECPrivateKey(privateKey)`　得到私钥的 ASN.1, DER 格式的二进制数据 privBytes
+	- 同样调用上面提到的 writeFile 函数，将 privBytes 写入证书文件 privKeyFile 中去
+	- 执行 `cert, err := tls.LoadX509KeyPair(certKeyFile, privKeyFile)`　得到证书 cert Certificate（Certificate　结构体是一个或多个证书的链）
+	- 返回 cert
+	- 删除 certKetFile 与 privKeyFile 两个文件
+
+- `func certHashFromRawCert(rawCert []byte) []byte`　对给定的二进制数据进行 SHA2-256　hash 运算，返回该 hash　值
+
+- `func extractCertificateHashFromContext(ctx context.Context) []byte`　从流中提取证书的 hash
+
+
+## demux.go
+- ChannelDeMultiplexer 是一个可以接受通道 registrations (AddCahnnel) 与 publications (DeMultiplex) 的结构体，并且可以根据 predicate　将 publications　广播到 registrations
+```go
+type ChannelDeMultiplexer struct {
+	channels []*channel
+	lock     *sync.RWMutex
+	closed   int32
+}
+```
+- channel 的定义
+```go
+type channel struct {
+	pred common.MessageAcceptor	//MessageAcceptor1是一个 predicate，用于确定创建　MessageAcceptor　实例的订阅者对哪些 messages 感兴趣
+	ch   chan interface{}
+}
+```
+- `func NewChannelDemultiplexer() *ChannelDeMultiplexer `创建一个新的 ChannelDeMultiplexer
+
+- `func (m *ChannelDeMultiplexer) Close() `　关闭通道
+
+- `func (m *ChannelDeMultiplexer) AddChannel(predicate common.MessageAcceptor) chan interface{}` 给定特定的 predicate　注册一个通道
+
+- `func (m *ChannelDeMultiplexer) DeMultiplex(msg interface{})`　将消息广播到由 AddChannel 调用返回并保存对应 predicate　的所有通道
+
+## msg.go
+- ReceivedMessageImpl 是 ReceivedMessage 的一个实现
+```go
+type ReceivedMessageImpl struct {
+	*proto.SignedGossipMessage
+	lock     sync.Locker
+	conn     *connection
+	connInfo *proto.ConnectionInfo
+}
+```
+- `func (m *ReceivedMessageImpl) GetSourceEnvelope() *proto.Envelope` 返回构造该 ReceivedMessage　的 Envelope
+
+- `func (m *ReceivedMessageImpl) Respond(msg *proto.GossipMessage)`　发送一个 msg 到发送该 ReceivedMessageImpl　的源去
+
+- `func (m *ReceivedMessageImpl) GetGossipMessage() *proto.SignedGossipMessage` 返回内部的 GossipMessage
+
+- `func (m *ReceivedMessageImpl) GetConnectionInfo() *proto.ConnectionInfo` 返回关于发送该 message　的远程 peer　的信息
+
+- `func (m *ReceivedMessageImpl) Ack(err error)`为该 message　发送 acknowledgement
+
+
+
+
+
+
 
 
 
