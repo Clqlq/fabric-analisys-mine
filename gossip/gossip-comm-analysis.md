@@ -63,9 +63,6 @@ type Comm interface {
 
 ## comm_impl.go
 
-
-## 以下是草稿
-
 我们根据 comm.go 接口中的方法来看一下在 comm_impl.go 中的具体实现。
 
 comm_impl.go 中定义了一个名为 commImpl 的结构体，该文件下主要是实现该结构体类型的各种方法
@@ -104,7 +101,7 @@ type commImpl struct {
 	- 执行 conn.send(msg, disConnectOnErr, shouldBlock) 调用 conn 的 send 方法将 msg 发送出去（send 方法的具体实现要看 conn.go 文件下的源码，不过大致看了一眼，貌似最后是把一个信息发送到了某一个通道）
 	- 执行 c.disconnect(peer.PKIID) 断开连接（disconnect 方法做了两件事，一个是把 pkiID 发送到了 `*connection.deadEndpoints` 通道中；另一件是把 `*connection.pki2Conn` 中 pkiID 的键对值删除）
 
-- `func (c *commImpl) SendWithAck(msg *proto.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*RemotePeer) AggregatedSendResult` SendWithAck 向远程 peers 发送 message，等待最小数量的 Ack （minAck）或者知道计时器过期
+- `func (c *commImpl) SendWithAck(msg *proto.SignedGossipMessage, timeout time.Duration, minAck int, peers ...*RemotePeer) AggregatedSendResult` SendWithAck 向远程 peers 发送 message，等待最小数量的 Ack （minAck）或者只到计时器过期
 	- 对 peers 中的每一个 peer 分别做处理
 	- 执行 `ackOperation := newAckSendOperation(sndFunc, waitForAck)`，返回一个 ackSendOperation 结构体指针
 	- 执行 `return ackOperation.send(msg, minAck, peers...)`，`*ackOperation.send` 方法大概就是对返回的 ack 做判断最后返回的是一个 []SendResult（该方法中也涉及了一些通道操作没太看明白） 
@@ -165,7 +162,7 @@ type connection struct {
 ```
 所以本文件下主要就是对上述两种结构体类型定义了很多方法，我们来一一的看一看。
 
-#### connectionStore
+### connectionStore
 - `func (cs *connectionStore) getConnection(peer *RemotePeer) (*connection, error)`　新建了一个 connection，得到 *connection 并将该 *connection　存储进 connectionStore　的 pki2Conn 字段这个字典中。在返回之前，创建了一个 goroutine　调用 *connnection.serviceConnection　方法
 
 - `func (cs *connectionStore) connNum() int`　就是返回 *connectionStore.pki2Conn 的键对值数目
@@ -180,7 +177,7 @@ type connection struct {
 
 - `func (cs *connectionStore) closeByPKIid(pkiID common.PKIidType) ` 从 *connection.pki2Conn 字典中删除对应项
 
-#### connection
+### connection
 - `func (conn *connection) close()` 
 	- 首先调用 `*connection.drainOutputBuffer` 把 `*connection.outBuff`　清空
 	- 然后关闭 `*connection.clientStream`（到远程端点的 client-side stream）
@@ -190,7 +187,7 @@ type connection struct {
 - `func (conn *connection) send(msg *proto.SignedGossipMessage, onErr func(error), shouldBlock blockingBehavior)`　
 	- 先锁定该 conneciton
 	- 将要发送的消息打包成 msgSending　结构体的形式
-	- 将该结构体是指针传入 *connection.outBuff 通道中
+	- 将该结构体的指针传入 *connection.outBuff 通道中
 
 - `func (conn *connection) serviceConnection() error` 
 	- 新建了两个通道 errChan 与 msgChan 分别接受 error 信息与 *proto.SignedGossipMessage　类型的信息， errChan 大小为1，msgChan 大小为20

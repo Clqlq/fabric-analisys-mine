@@ -1,14 +1,85 @@
 ## gossip/api/
-三个文件： 
-	
-	channel.go 
-	crypto.go 
-	subchannel.go
+ 
+代码结构：
+```go
+/api
+|	|- api_test.go
+|	|- channel.go
+|	|- crypto.go
+|	|- subchannel.go
+
+```
+
 ---
 ### channel.go
-暂时不写
+
+
+```go
+// SecurityAdvisor 定义了一个提供安全性和身份相关功能的外部辅助对象
+type SecurityAdvisor interface {
+	// OrgByPeerIdentity 返回 给定 peer 对应的 OrgIdentityType
+	// 出错则返回 nil　
+	// 此方法不验证peerIdentity
+	// 该验证应该在执行流程期间适当地进行
+	OrgByPeerIdentity(PeerIdentityType) OrgIdentityType
+}
+
+// ChannelNotifier 由 gossip component 实现
+// 用于 peer layer　通知 goosip component 一个　JoinChannel 事件
+type ChannelNotifier interface {
+	JoinChannel(joinMsg JoinChannelMessage, chainID common.ChainID)
+}
+
+// JoinChannelMessage是声明一个通道的成员列表的创建或变更的消息
+// 并且是在对 peers 之间进行 gossip 的消息
+type JoinChannelMessage interface {
+
+	// SequenceNumber 返回 JoinChannelMessage 源自的配置块的序列号
+	SequenceNumber() uint64
+
+	//　Members　返回通道下的组织
+	Members() []OrgIdentityType
+
+	//　AnchorPeersOf　返回给定组织的所有 anchor peer
+	AnchorPeersOf(org OrgIdentityType) []AnchorPeer
+}
+
+// AnchorPeer 是一个 anchor peer　的身份与端点
+type AnchorPeer struct {
+	Host string // Host is the hostname/ip address of the remote peer
+	Port int    // Port is the port the remote peer is listening on
+}
+
+// OrgIdentityType 定义了一个组织的身份
+type OrgIdentityType []byte
+
+```
+---
+
 ### subchannel.go
-暂时不写
+
+```go
+// RoutingFilter 定义了哪些 peers　应该收到确定的消息
+//　或者哪些 peers　是足够合格可以收取某一确定的消息
+type RoutingFilter func(peerIdentity PeerIdentityType) bool
+
+// CollectionCriteria describes a way of selecting peers from a sub-channel
+// given their signatures and whether they are from our organization
+//　CollectionCriteria　描述了一种通过给定对方的签名以及是否来自我们组织的信息
+// 来从子通道中选择 peers　的方式
+type SubChannelSelectionCriteria func(signature PeerSignature, isFromOurOrg bool) bool
+
+// RoutingFilterFactory 定义了一个对象
+// 通过给定一个 CollectionCriteria 和一个 channel
+// 该对象便能断言哪些 peers　应该知道与 CollectionCriteria 相关的数据
+type RoutingFilterFactory interface {
+	// Peers returns a RoutingFilter for given chainID and CollectionCriteria
+	Peers(common.ChainID, SubChannelSelectionCriteria) RoutingFilter
+}
+
+```
+
+---
 ### crypto.go
 ```go
 
@@ -44,7 +115,7 @@ type MessageCryptoService interface {
 	VerifyByChannel(chainID common.ChainID, peerIdentity PeerIdentityType, signature, message []byte) error
 
 	// ValidateIdentity 验证远程 peer 的身份
-	// 如果身份无效，撤销，过期则返回错误
+	// 如果身份无效／撤销／过期则返回错误
 	/// 否则返回 nil
 	ValidateIdentity(peerIdentity PeerIdentityType) error
 
@@ -61,8 +132,8 @@ type MessageCryptoService interface {
 // PeerIdentityType 是 peer 的 certificate
 type PeerIdentityType []byte
 
-// PeerSuspector 返回一个有给定 indentity 的 peer 是否被怀疑
-// 将被撤销，或者它的 CA 将被撤销
+// PeerSuspector 返回一个有给定 indentity 的 peer 是否
+// 被怀疑将被撤销，或者它的 CA 将被撤销
 type PeerSuspector func(identity PeerIdentityType) bool
 
 // PeerSecureDialOpts 返回 gRPC DialOptions，用来
