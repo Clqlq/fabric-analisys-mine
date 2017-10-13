@@ -161,25 +161,59 @@ type peerImpl struct {
 - func (pi *peerImpl) ID() peerID
 ```
 
-- gossip 接口（感觉这个接口和 election.go 文件中的 LeaderElectionAdapter 接口很像，除了少了一个 CreateMessage　方法）
+- gossip 接口（感觉这个接口和 election.go 文件中的 LeaderElectionAdapter 接口很像）
 ```go
 type gossip interface {
 	// Peers 返回被认为还存活 NetworkMembers
 	Peers() []discovery.NetworkMember
 
-	// Accept 返回一个明确的只读通道，该通道中的内容是由那些匹配一个特定 predicaate　的节点发来 messages
+	// Accept 返回一个明确的只读通道，该通道中的内容是由那些匹配一个特定 predicate　的节点发来 messages
 	// 如果 passThrough 是 false，这些 messages 由 gossip layer 预先处理
 	// 如果 passThrough 是 true， gossip layer 不干预这些 messages
 	// 并且这些 messages　能够用于将回复送回发送方
 	Accept(acceptor common.MessageAcceptor, passThrough bool) (<-chan *proto.GossipMessage, <-chan proto.ReceivedMessage)
 
-	// Gossip sends a message to other peers to the network
+	// Gossip 发送一个 message 到该网络的其他 peers
 	Gossip(msg *proto.GossipMessage)
 }
+```
+- `func NewAdapter(gossip gossip, pkiid common.PKIidType, channel common.ChainID) LeaderElectionAdapter` 创造新的 leader election adapter
 
+- adapterImpl 结构体，是对 LeaderElectionAdapter 接口的实现
+```go
+type adapterImpl struct {
+	gossip    gossip
+	selfPKIid common.PKIidType
 
+	incTime uint64
+	seqNum  uint64
+
+	channel common.ChainID
+
+	logger *logging.Logger
+
+	doneCh   chan struct{}
+	stopOnce *sync.Once
+}
+- func (ai *adapterImpl) Gossip(msg Msg) 
+- func (ai *adapterImpl) Accept() <-chan Msg 
+- func (ai *adapterImpl) CreateMessage(isDeclaration bool) Msg 
+- func (ai *adapterImpl) Peers() []Peer
+- func (ai *adapterImpl) Stop()
 
 ```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
