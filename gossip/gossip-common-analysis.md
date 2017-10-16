@@ -51,7 +51,7 @@ const (
 ## metastate.go
 ```go
 // NodeMetastate 存储了当前账本的高度信息
-// 即最后一个i接收的块的序列号
+// 即最后一个接收的块的序列号
 type NodeMetastate struct {
 
 	// 账本高度

@@ -136,7 +136,7 @@ type leaderElectionSvcImpl struct {
 	yieldTimer    *time.Timer
 }
 ```
-下面关于 leaderElectionSvcImpl　的各种方法暂不介绍，主要先记住该接口体是 LeaderElectionService 接口的实现，外部调用也只能直接点用接口中声明了的方法。
+下面关于 leaderElectionSvcImpl　的各种方法暂不介绍，主要先记住该接口体是 LeaderElectionService 接口的实现，外部调用也只能直接调用接口中声明了的方法。
 
 ---
 
