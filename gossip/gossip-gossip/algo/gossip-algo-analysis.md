@@ -15,7 +15,7 @@ PullEngine 是执行 pull-based gossip 的对象，并且维护那些由字符�
 3) Initiator 检查收到的 NONCES 的有效性，收集收到的 message　的摘要。然后将想要从远程 peer　得到的 item　的 id　摘要与 NONCE 打包成一个 request，将 request 发生到对应 peer
 4) 如果 peer 仍然持有 NONCE 与相关的 items，则返回被请求的 items 与 NONCE
 
-    Other peer				   			   Initiator
+    Other peer				   			   					Initiator
 	 O	<-------- Hello <NONCE> -------------------------		O
 	/|\	--------- Digest <[3,5,8, 10...], NONCE> -------->     /|\
 	 |	<-------- Request <[3,8], NONCE> -----------------      |
