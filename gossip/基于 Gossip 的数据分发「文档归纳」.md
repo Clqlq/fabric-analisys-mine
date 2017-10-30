@@ -37,9 +37,45 @@
 	- OS 对应地应该保证该 peer 确实属于某个参与进该 channel 的 Org，并将 bathces 发送到与之连接的 peer
 	- 与之连接的 peer 对应地，将会将收到的 bolcks 分发到加入该 channel 的 peers
 	- 
+	- 一旦 channel membership 建立，gossip componet 将会根据常规算法进行操作
+
+- 接↑
+	- 为了实现 peer 严格保证所发消息都控制在对应 channel 中，每一个 peer 加入 channel 时，都必须最新的 channel configuration，以判断哪些组织在 channel 中(对于新建的 channel，其配置及 Genesis block)
+	- 每个 channel 的 gossip 都将以与标准 gossip 相同的方式工作
+	- 注意 state synchronization 可以在不同 Org 的 peers 中进行，只要它们同属同一个通道
+	- peer 加入与被移除通道都将通过 configuration transaction 来完成
+
+---
+
+- Authentication and membership management
+	- peer 的身份称为 PKI-ID
+	- 有两种 message 的发送方式
+		- Gossip（从一个 peer 发往一组 peers，意味着 message 可以在 peers 中被中继）
+			- 必须包含 peer 的 PKI-ID 
+			- 必须被该 peer 签名
+			- 能被该 peer 的证书验签
+		- point-to-point
+			- 点对点间发送的不是gossip 的 message,并没有被签名，因为有这样的假设：在生产环境中，peers 的 TLS 层是激活的,以此来保证安全性
+	- 在 peers 间被点对点传输，但却不被 peer 签名也不是 gossip 的 message 只会是 包含 Ledger block 的message，该 message 被 OS 签名
+	- peer 的成员视图（membership view）(即 peer 所知的 peers)由如下方式构建：
+		- 每一个 peer 都周期性地 gossip 一个特定的 message —— AliveMessage,该 message 包含：
+			- PKI-ID
+			- Endpoint（host + ":" + port）
+			- Metadata
+			- PeerTime（包含）：
+				- Peer’s incarnation time (startup time)
+				- 单调递增计数器，在 AliveMessage 的每次分发时递增
+			- 对上述字段的 signature
+			- peer 的 certificate（optional）
+	- peer 的证书只会在当 peer 开始启动的一段有限的时间内被包含在 message 中,过了时间则不再被包含
+	- 当一个 peerA 从其他 peers 收到 message，peerA 应该用在这之前就收到过的证书对 peer 的签名验签（这就是为什么在 peer 启动的一段时间内 AliveMessage 会包含 peer certificate 的原因，目的就是为了使得其他 peers 能够验证其签名）
+	- 没有收到其他 peers certificate 的 Peers 可以通过一种周期性的分发机制来获取其他 peer的证(##（具体见后面）##
+	- 当 peers 收到一个来自 remote peer 的 AliveMessage，它都将通过 AliveMessage 中的 endpoint 字段与之建立连接
+	- ↑
+	- ↑
 	- 
 
-
+---
 
 
 
