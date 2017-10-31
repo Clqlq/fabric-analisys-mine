@@ -114,3 +114,25 @@
 
 
 ## 实现
+- 提供的功能：
+	- Discovery and Membership —— 持续跟踪 membership 的状态（alive？dead？）
+	- Broadcast —— 将一个 message 从单一源发往所有成员
+	- Background activity —— 同步所有 nodes 的状态
+- Gossip-based broadcast complementary modes of operation:
+	- Push：一开始粗暴地分发 message
+	- Push-pull：与邻居交换信息以实现同步
+	- Anti-entropy：偶尔与邻居交换信息以同步 global state
+- 基于 gossip 的广播实现：一个 peer 接收一个 message，随机选择一些 peers 然后将 message 发给它们
+- 在 peers 间同步状态：一个 peer 周期性地与其他 peers 同步比较信息，然后进行状态同步（pull）
+- 每一个 peer 都维护了 membership，以使得 peer 能从中随机选择一些 peers 并将 message 发送过去（不用维护复杂的连接，所以这种方法具有很好的鲁棒性）
+
+- Membership —— discovery
+	- 每一个 node 在开启时都收到一个 configuration parameter，包含了 a set of peers it should try to connnect
+	- 
+
+
+## Leader election
+
+
+
+
