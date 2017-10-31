@@ -1,3 +1,5 @@
+## 概述
+
 - 一个 data item 永远不会到达不是属于与该 data item 关联的通道的 node；
 
 - 提出的分发网络将会将信息分发到所有的 peers，除此之外还会进行一些后台运行，以保证所有的 peers 收到相同的 data／到达相同的 state；
@@ -39,7 +41,7 @@
 	- 
 	- 一旦 channel membership 建立，gossip componet 将会根据常规算法进行操作
 
-- 接↑
+- ~
 	- 为了实现 peer 严格保证所发消息都控制在对应 channel 中，每一个 peer 加入 channel 时，都必须最新的 channel configuration，以判断哪些组织在 channel 中(对于新建的 channel，其配置及 Genesis block)
 	- 每个 channel 的 gossip 都将以与标准 gossip 相同的方式工作
 	- 注意 state synchronization 可以在不同 Org 的 peers 中进行，只要它们同属同一个通道
@@ -71,13 +73,44 @@
 	- 当一个 peerA 从其他 peers 收到 message，peerA 应该用在这之前就收到过的证书对 peer 的签名验签（这就是为什么在 peer 启动的一段时间内 AliveMessage 会包含 peer certificate 的原因，目的就是为了使得其他 peers 能够验证其签名）
 	- 没有收到其他 peers certificate 的 Peers 可以通过一种周期性的分发机制来获取其他 peer的证(##（具体见后面）##
 	- 当 peers 收到一个来自 remote peer 的 AliveMessage，它都将通过 AliveMessage 中的 endpoint 字段与之建立连接
-	- ↑
-	- ↑
-	- 
+	- ~
+	- ~
+	- ~
+	- 在生产环境中，已经假设 peers 使用了 mutual TLS，TLS 连接的每一侧都有一个合法的 TLS certificate
+	- 当一个 peerA 和 其他 peerB 第一次交流时，peerA 与 peerB 执行一个 handshake，以验证 peerB 有该 TLS certificate 对应 证书，因此将该 TLS session（回话）与该 fabric membership identity 绑定在一起
+	- handshake 是对称与简单的
+	- ~
+	- ~
+	- ~
+	- 每个 peer 发往 remote peers 的第一个 message 是 ConnEstablish message，该消息包括：
+		- 对该 peer 的 TLS certificate 的 hash 的签名
+		- 该 peer 的 PKI-ID
+		- fabric MSP certificate
+	- 每个 peer 反过来：
+		- 接收该 message
+		- 提取该 remote peer 的 certificate 并对其 hash
+		- 验证 ConnEstablish 中对该 hash 的签名
+		- （如果验证失败，则 peer 拒绝该连接）
+	- Handling channel membership changes：当 gossip component 初始化时，它给了一个 channel 验证策略的实现，该策略的实现可以决定一个 remote peer 与 其所属的 Org 之间的 mapping
+		- 上述实现：维护每个 peer PKI-ID 与其 root Org CA 的 mapping（本地 Ledger 的 last configuration 含有 channel 所含 Org（由 root Org CA 代表）的信息
+	- OS 发送的 batches 包含了该通道 last configuration block 的序列号。当一个 peerA 从 peerB 收到一个 block 时，peerA 查看该 block 的序列号与其自己所有的 Ledger 的最新的序列号，然后查询last configuration block 的序列号
+		- 如果写在接收到的 block 中的 last configuration block 的序列号，比本地 Ledger 最新 block 的序列号要搞，则 peerA 将收到的 data block 放在内存中，并不会转发
+		- 反之，则意味着该账本的最新 configuration 已经更新，接收到的 block 可以安全地发往合法的（处在同一通道中的）其他 peers
 
 ---
 
+- Resulting Capabilities Needed
+	- 从一个 source 到多个 destination 的有效的数据分发
+	- peer-to-peer gossip
+	- Pub / sub like features to support multi-channels
+	- Membership – keep an updated list of nodes that are alive and connected with associated metadata
+
+- Initial API
+	- Gossip() —— 发送一个 message 到特定 gossip group 中的所有 nodes
+	- Accept() —— 从其他 peer 接收一个 message
+	- GetPeers() —— 获取当前的成员视图
+	- UpdateMetadata() —— 更新该 node 的 metadata
+	- Stop() —— 停止该 gossip com破net
 
 
-
-
+## 实现
