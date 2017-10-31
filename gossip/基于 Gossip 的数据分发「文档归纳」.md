@@ -35,11 +35,11 @@
 	- 一旦 channel 创建成功，client SDK 能够指导属于相关 Org 的特定 peers 加入新建立的 channel
 	- 正加入的 peers 会使用 gossip 组件，向属于该 channel 的所有 Org 进行广播，表明其已加入 channel
 	- 所有加入 channel 的 peers 都需要知道对方的存在
-	- 代表 Org 与 OS 进行连接的 peer 将会收到关于 哪些 peers 属于哪个 channel 的信息，并将代表它们调用 Deliver() 协议
+	- 代表 Org 与 OS 进行连接的 peer 将会收到关于 哪些 peers 属于哪个 channel 的信息，~~并将代表它们调用 Deliver() 协议？？？~~
 	- OS 对应地应该保证该 peer 确实属于某个参与进该 channel 的 Org，并将 bathces 发送到与之连接的 peer
-	- 与之连接的 peer 对应地，将会将收到的 bolcks 分发到加入该 channel 的 peers
-	- 
-	- 一旦 channel membership 建立，gossip componet 将会根据常规算法进行操作
+	- 与之连接的 peer 对应地，将会将收到的 blocks 分发到加入该 channel 的 peers
+
+	- ~~一旦 channel membership 建立，gossip componet 将会根据常规算法进行操作???~~
 
 - ~
 	- 为了实现 peer 严格保证所发消息都控制在对应 channel 中，每一个 peer 加入 channel 时，都必须最新的 channel configuration，以判断哪些组织在 channel 中(对于新建的 channel，其配置及 Genesis block)
@@ -57,7 +57,7 @@
 			- 必须被该 peer 签名
 			- 能被该 peer 的证书验签
 		- point-to-point
-			- 点对点间发送的不是gossip 的 message,并没有被签名，因为有这样的假设：在生产环境中，peers 的 TLS 层是激活的,以此来保证安全性
+			- 点对点间发送的不是gossip 的 message，并没有被签名，因为有这样的假设：在生产环境中，peers 的 TLS 层是激活的,以此来保证安全性
 	- 在 peers 间被点对点传输，但却不被 peer 签名也不是 gossip 的 message 只会是 包含 Ledger block 的message，该 message 被 OS 签名
 	- peer 的成员视图（membership view）(即 peer 所知的 peers)由如下方式构建：
 		- 每一个 peer 都周期性地 gossip 一个特定的 message —— AliveMessage,该 message 包含：
