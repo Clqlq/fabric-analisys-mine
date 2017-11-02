@@ -83,8 +83,8 @@ type RoutingFilterFactory interface {
 ### crypto.go
 ```go
 
-// MessageCryptoService 是在 gossip 组件 与 peer 的加密层之间的协议（contract）
-// MessageCryptoService 被 gossip 组建用来验证与授权远程 peer 与它们所发送的数据
+// MessageCryptoService 是在 gossip 组件 与 peer 加密层之间的协议（contract）
+// MessageCryptoService 被 gossip 组件用来验证与授权远程 peer 与它们所发送的数据
 // 也用来验证从排序服务收到的区块
 type MessageCryptoService interface {
 
