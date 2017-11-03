@@ -12,12 +12,34 @@ peer 初始化 Gossip 提供了哪些参数？未提供哪些？ => peer 在给�
 go g.start()
 go g.connect2Bootstrappeers()
 ```
+---
+# Ｇossip 服务启动与初始化的详细分析 
+Ｇossip 服务最初通过 `/peer/node/start.go` 下对 `service.InitGossipService()` 函数的调用来初始化 Gossip 服务，经过一系列的函数调用，找到 Gossip 服务最重要的部分在于 `gossip/gossip/gossip_impl.go`　文件下的 `func NewGossipService　(conf *Config, s *grpc.Server, secAdvisor api.SecurityAdvisor, mcs api.MessageCryptoService, selfIdentity api.PeerIdentityType, secureDialOpts api.PeerSecureDialOpts) Gossip`　函数的使用，该函数返回了一个与一 gRPC server 相关联的 gossip instance，我们重点分析这个函数。
 
-#### 4
-##### 4.1 `func (g *gossipServiceImpl) start()`
+在 `func NewGossipService(...) Gossip`函数下，在对 `gossipServiceImpl` 实例初始化的过程中，开启了许多 goroutine 来启动相关服务，下文主要是分析开启的各个 goroutine。
+
+### 1.　`go store.expirationRoutine()` 的启动
+在配置 gossipServiceImpl 的 stateInfoMsgStore 字段时，？？？还没看懂
+
+- `g.stateInfoMsgStore = g.newStateInfoMsgStore()`
+	- `msgstore.NewMessageStoreExpirable(...)`
+		- `go store.expirationRoutine()`
+
+### 2. `go idMapper.periodicalPurgeUnusedIdentities()` 的启动
+？？？没看懂
+
+### 3. `go p.periodicEmit()`　的启动
+该线程执行 emit
+
+### 4. `g.disc = discovery.NewDiscoveryService(...)`　中启动的多个 goroutine
+
+```go
+go d.periodicalSendAlive()
+go d.periodicalCheckAlive()
+go d.handleMessages()
+go d.periodicalReconnectToDead()
+go d.handlePresumedDeadPeers()
+```
 
 
-
-##### 4.2 `func (g *gossipServiceImpl) connect2Bootstrappeers()`
-- 读取 gossipServiceImpl 中 config 字段中的 BootstrapPeers 字段：该字段代表 core.yaml 中的 peer.gossip.bootstrap 配置。该配置表示 peer 在 startup 时回去连接的其他 peers（PS：所给的 endpoints 必须是同一个 Org　下的 peers 的 endpoint）（PS：当前配置中只给了 127.0.0.1.7051）
 
