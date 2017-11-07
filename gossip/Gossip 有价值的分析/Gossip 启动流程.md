@@ -32,8 +32,8 @@ go g.connect2Bootstrappeers()
 
 ### 3. `go p.periodicEmit()`　的启动
 - 该 goroutine 周期性的执行 emit （发送）操作（emit 有两种触发条件，一种是 gossipServiceImpl 的 emitter 字段中存储的 msg 数量大于配置文件中设定的阈值，一种是定期的计时器到期），每隔 10 ms 发送一次，该配置由 core.yaml 的 `peer.gossip.maxPropagationBurstLatency` 配置项决定。
-- 另：在 gossipServiceImpl 初始化其 emitter 字段时，给定了４个配置，其中三个分别为 `peer.gossip.propagateIterations`，｀peer.gossip.maxPropagationBurstSize｀，｀peer.gossip.maxPropagationBurstLatency｀，分别代表每个 msg 被发送的次数／缓存 msg 的最大值／连续两次 push msg 之间的最大时间间隔，默认值分别为１／10 ／10ms，每一次将新的 msg 加入 emitter 对应缓存中，都会判断是否已经达到的最大缓存数，如果达到了则执行 emit 操作。 
-- emit 操作实际上是将要发送的 msg 打包成 `msgs2beEmitted`的切片，然或传送给刚才一个回调函数——即前面所说的第4个配置，代码中给定的函数是 `gossip/gossip/gossip_impl.go`下的`func (g *gossipServiceImpl) sendGossipBatch(a []interface{})`
+- 另：在 gossipServiceImpl 初始化其 emitter 字段时，给定了４个配置，其中三个分别为 `peer.gossip.propagateIterations`，`peer.gossip.maxPropagationBurstSize`，`peer.gossip.maxPropagationBurstLatency`，分别代表每个 msg batch 被发送的次数／缓存 msg 的最大值／连续两次 push msg 之间的最大时间间隔，默认值分别为１／10 ／10ms，每一次将新的 msg 加入 emitter 对应缓存中，都会判断是否已经达到的最大缓存数，如果达到了则执行 emit 操作。 
+- emit 操作实际上是将要发送的 msg 打包成 `msgs2beEmitted`的切片，然后传送给刚才一个回调函数——即前面所说的第4个配置，代码中给定的函数是 `gossip/gossip/gossip_impl.go`下的`func (g *gossipServiceImpl) sendGossipBatch(a []interface{})`
 - `func (g *gossipServiceImpl) sendGossipBatch(a []interface{})`继续调用`func (g *gossipServiceImpl) gossipBatch(msgs []*proto.SignedGossipMessage)`，gossipBatch 是真正决定将要将 msg  gossip 到哪些 peers 的方法（**关于 gossipBatch 的分析见其他文档~~现在还没写~~**）
 
 ### 4. `g.disc = discovery.NewDiscoveryService(...)`　中启动的多个 goroutine
