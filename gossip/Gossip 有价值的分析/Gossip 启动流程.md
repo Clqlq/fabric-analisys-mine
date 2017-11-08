@@ -37,6 +37,7 @@ go g.connect2Bootstrappeers()
 - `func (g *gossipServiceImpl) sendGossipBatch(a []interface{})`继续调用`func (g *gossipServiceImpl) gossipBatch(msgs []*proto.SignedGossipMessage)`，gossipBatch 是真正决定将要将 msg  gossip 到哪些 peers 的方法（**关于 gossipBatch 的分析见其他文档~~现在还没写~~**）
 
 ### 4. `g.disc = discovery.NewDiscoveryService(...)`　中启动的多个 goroutine
+- 
 
 ```go
 go d.periodicalSendAlive()
@@ -45,6 +46,37 @@ go d.handleMessages()
 go d.periodicalReconnectToDead()
 go d.handlePresumedDeadPeers()
 ```
+
+---
+# gossipBatch 详细分析
+在上一部分的第三大点中，说道 gossipBatch 是真正决定将 msgs gossip 到 哪些 peer 的方法，下面来分析一下其执行过程。
+gossipBatch 将 msgs 分为５大类：
+```go
+- blocks			//只在同一 Channel　&& 同一 Org　中发送
+- Leadership msg		//只在同一 Channel　&& 同一 Org　中发送
+- StateInfo msg		//只在 channel　中发送~~????~~
+- Org msg			//只在同一 Org　中发送
+- Others			//~~随意发不限 Org???~~
+```
+### 1. 首先设定了4个 predicate：
+```
+- isABlock
+- isAStateInfoMsg
+- isOrgRestricted
+- isLeadershipMsg
+```
+### 2. 然后根据上面设定的 predicate 将方法传入的`msgs []*proto.SignedGossipMessage` 分为５类msg：
+```go
+- blocks
+- leadershipMsgs
+- stateInfoMsgs
+- orgMsgs
+- Others
+```
+**注意，上面得到的 `blocks` 或 `stateInfoMsgs` 这类有 channel 限制的 msg 的 slice，里面包含的 msgs 可能要发往不同 channel。**
+
+### 3. 各类 msg 的发送
+#### 3.1 blocks
 
 
 
