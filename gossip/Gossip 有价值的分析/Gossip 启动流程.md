@@ -76,7 +76,36 @@ gossipBatch 将 msgs 分为５大类：
 **注意，上面得到的 `blocks` 或 `stateInfoMsgs` 这类有 channel 限制的 msg 的 slice，里面包含的 msgs 可能要发往不同 channel。**
 
 ### 3. 各类 msg 的发送
-#### 3.1 blocks
+#### 3.1 blocks 与 leadershipMsgs
+调用`func (g *gossipServiceImpl) gossipInChan(messages []*proto.SignedGossipMessage, chanRoutingFactory channelRoutingFilterFactory)`方法
 
+- 提取 messages 参数中所有 msg 所含有的 channels
+- for 循环
+	- 对于每一个 channel，从 messages 中提取将要发送到该 channel 的所有 msgs
+	- 获取该 peer 当前视图下已知的所有 remote peers（~~是同一个 Org 之内吗？？？还是包括不同 Org 外的？？？~~）
+	- 从 peers 中过滤出在该 channel 中的所有的 filteredPeers
+	- 若 msg 为 leadshipMsgs 则选择所有的 filteredPeers，若 msg 为 blocks 则从 filteredPeers 中随机选择 `g.conf.PropagatePeerNum` 个 remote peers 发送（PS：`g.conf.PropagatePeerNum` 对应 core.yaml 中的 `peer.gossip.propagatePeerNum`配置项，为选择发送 msg 的 remote peers 的数目，默认为3，如果已有的 remote peers 数量少于默认数目，则选择所有 remote peers）
+	- for 循环
+		- 对于每一个 msg，调用 gossipServiceImpl 的 comm 字段中的 Send 方法来发送 msg，即执行 `g.comm.Send(msg, peers2Send...)`（PS：具体发送细节对见 `gossip/comm/comm_impl.go`中 `Send` 方法的分析~~还没写????~~）
 
+#### 3.2 stateInfoMsgs
+StateInfo 是用来让一个 peer 中继（relay）它的状态信息到其他 peers.
+- for 循环
+	- 提取 stateInfoMsgs 中的每一个 msg
+	- 对于该 msg 提取其 channel 信息
+	- 和 3.1 中一样，从该 peer 的当前视图中，过滤出在该 channel 中的 fileterdPeers
+	-从 filterdPeers 中随机选择 `g.conf.PropagatePeerNum` 个 remote peers 发送
+	- 执行 `g.comm.Send(stateInfMsg, peers2Send...)`
 
+#### 3.3 orgMsgs
+- 与上面类似，选择该 peer 当前视图下所有 peers，过滤出在同一 Org 下的 remote peers
+- for 循环
+	- 对 orgMsgs 中的每一个 msg，执行 `g.comm.Send(stateInfMsg, peers2Send...)`
+
+#### 3.4 Others
+首先判断是否为 AliveMsg，如果不是则不做相关处理，是则进行下面的步骤。
+- for 循环，对于 msgs 中的每一个 msg
+	- 得到该 peer 下当前视图的所有 peers，随机选择`g.conf.PropagatePeerNum`个 remote peers
+	- 调用`func (g *gossipServiceImpl) sendAndFilterSecrets(msg *proto.SignedGossipMessage, peers ...*comm.RemotePeer)`方法
+		- 如果该 msg 是 external organizations 的 AliveMsg 或者将要发往的 remote peer 没有 externalEndpoint，则不会把该 msg 发往该 remote peer
+		- 如果该 AliveMsg 不是 external orgnizations 的 AliveMsg 且将要发往的 remote peer 有 externalEndpoint，则将 msg 的 Envelope 字段的 SecretEnvelope 置为 nil，即执行 `msg.Envelope.SecretEnvelope = nil`，然后调用 `g.comm.Send(msg,peer)`
