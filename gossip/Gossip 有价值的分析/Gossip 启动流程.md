@@ -1,4 +1,5 @@
 # 整个文档是从上至下的包含关系
+# 文档目前写得很详细，之后编辑成书会砍掉很多中间部分
 
 ## 1
 peer 初始化 Gossip 提供了哪些参数？未提供哪些？ => peer 在给全局变量 `gossipServiceInstance = &gossipServiceImpl` 时 提供了 mcs/ peerIdentity/ secAdv，deliveryFactory 提供了一个空结构体，privateHandlers/ leaderelection/ deliveryService 只是初始化了空值；gossip 字段是利用 integration.NewGossipComponent(...) 将给定的 grpc server 与新的 Gossip Componet 绑定
@@ -37,7 +38,7 @@ go g.connect2Bootstrappeers()
 - `func (g *gossipServiceImpl) sendGossipBatch(a []interface{})`继续调用`func (g *gossipServiceImpl) gossipBatch(msgs []*proto.SignedGossipMessage)`，gossipBatch 是真正决定将要将 msg  gossip 到哪些 peers 的方法（**关于 gossipBatch 的分析见其他文档~~现在还没写~~**）
 
 ### 4. `g.disc = discovery.NewDiscoveryService(...)`　中启动的多个 goroutine
-- 
+`func NewDiscoveryService(self NetworkMember, comm CommService, crypt CryptoService, disPol DisclosurePolicy) Discovery` 函数创建了新的 gossip discovery service —— `d := &gossipDiscoveryImpl{...}`，然后开启了几个 goroutine，如下：
 
 ```go
 go d.periodicalSendAlive()
@@ -46,6 +47,21 @@ go d.handleMessages()
 go d.periodicalReconnectToDead()
 go d.handlePresumedDeadPeers()
 ```
+#### 4.1 `go d.periodicalSendAlive()`
+- 该 goroutine 每隔5秒向外发送一次 AliveMsg，时间间隔由 core.yaml 中的`peer.gossip.aliveTimeInterval`配置项决定，默认为5秒。发送 AliveMsg 最终是通过调用 `gossip/discovery/discovery.go`中的 `type CommService interface` 中的 `Gossip(msg *proto.SignedGossipMessage)` 方法，该方法实现是`func (da *discoveryAdapter) Gossip(msg *proto.SignedGossipMessage)`。
+
+- 而`func (da *discoveryAdapter) Gossip(msg *proto.SignedGossipMessage)`中实际是利用了 `gossip/gossip/batcher.go` 中的 `type batchingEmitter interface` 的 `Add(interface{})`方法。`Add(interface{})`方法`的实现即 `gossip/gossip/batcher.go`下的 `func (p *batchingEmitterImpl) Add(message interface{}) `方法，这就是调用前面第三部分提到的将 msg 加入 emitter 缓存的方法，下一步的发送由 emitter 完成。
+
+**（PS:这些流水账后面肯定要精简的，简单的说到怎么发送，和哪些默认配置有关就好了）**
+
+
+#### 4.2 `go d.periodicalCheckAlive()`
+该 goroutine 每2.5秒遍历一次上一次收到的AliveMsg，如果某个 remote peer 发过来的最新的 AliveMsg 距现在已经过去了25秒，则将该 remote peer 从 gossipDiscoveryImpl（该结构体实现了`gossip/discovery/disvocery.go`下的 `type Discovery interface`） 的 aliveMembership 字段中移除，放入 deadMembership 字段中。
+检查 AliveMsg 的周期由 core.yaml 中的 `peer.gossip.aliveExpirationTimeout`配置项决定，默认为25秒。
+
+#### 4.3 `go d.handleMessages()`
+
+
 
 ---
 # gossipBatch 详细分析
